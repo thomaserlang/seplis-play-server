@@ -128,5 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-
+seplis_play_server.yaml
 !.env
