@@ -23,11 +23,12 @@ def upgrade():
     )
 
     op.create_table('movies', 
-        sa.Column('movie_id', sa.Integer, primary_key=True),
+        sa.Column('movie_id', sa.Integer, nullable=False),
         sa.Column('path', sa.String(400), primary_key=True),
         sa.Column('metadata', sa.JSON),
         sa.Column('modified_time', sa.DateTime),
     )
+    op.create_index('ix_movies_movie_id', 'movies', ['movie_id'])
 
 def downgrade():
-    raise NotImplemented
+    pass

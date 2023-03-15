@@ -16,12 +16,13 @@ import sqlalchemy as sa
 
 def upgrade():
     op.create_table('episodes', 
-        sa.Column('series_id', sa.Integer, primary_key=True),
-        sa.Column('number', sa.Integer),
+        sa.Column('series_id', sa.Integer, nullable=False),
+        sa.Column('number', sa.Integer, nullable=False),
         sa.Column('path', sa.String(400), primary_key=True),
         sa.Column('metadata', sa.JSON),
         sa.Column('modified_time', sa.DateTime),
     )
+    op.create_index('ix_series_id_number', 'episodes', ['series_id', 'number'])
 
     op.create_table('episode_number_lookup', 
         sa.Column('series_id', sa.Integer, primary_key=True),
