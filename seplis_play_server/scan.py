@@ -44,7 +44,7 @@ async def cleanup_episodes():
     async with database.session() as session:
         deleted_count = 0
         rows = await session.stream(sa.select(models.Episode))
-        async for db_episodes in rows.yield_per(500):
+        async for db_episodes in rows.yield_per(1000):
             for e in db_episodes:
                 if os.path.exists(e.path):
                     episodes.append(schemas.Play_server_episode_create(
@@ -84,7 +84,7 @@ async def cleanup_movies():
     async with database.session() as session:
         result = await session.stream(sa.select(models.Movie))
         deleted_count = 0
-        async for db_movies in result.yield_per(500):
+        async for db_movies in result.yield_per(1000):
             for m in db_movies:
                 if os.path.exists(m.path):
                     movies.append(schemas.Play_server_movie_create(
