@@ -74,9 +74,9 @@ async def cleanup_episodes():
                 timeout=900,
             )
             if r.status_code >= 400:
-                logger.error(f'Faild to update the episode play server index ({config.server_id}): {r.content}')
+                logger.error(f'Faild to add {len(episodes)} episodes to the episode play server index ({config.server_id}): {r.content}')
             else:
-                logger.info(f'Updated the episode play server index ({config.server_id})')
+                logger.info(f'Updated {len(episodes)} episodes to the episode play server index ({config.server_id})')
 
 
 async def cleanup_movies():
@@ -112,9 +112,9 @@ async def cleanup_movies():
                 timeout=900,
             )
             if r.status_code >= 400:
-                logger.error(f'Faild to update the movie play server index ({config.server_id}): {r.content}')
+                logger.error(f'Faild to add {len(movies)} movies to the movie play server index ({config.server_id}): {r.content}')
             else:
-                logger.info(f'Updated the movie play server index ({config.server_id})')
+                logger.info(f'Updated the movie play server index with {len(movies)} movies ({config.server_id})')
 
 
 def upgrade_scan_db():
