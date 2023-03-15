@@ -80,10 +80,14 @@ class Play_scan:
         return data
 
     def get_file_modified_time(self, path):
-        return datetime.utcfromtimestamp(
-            os.path.getmtime(path)
-        ).replace(microsecond=0)
-
+        try:
+            return datetime.utcfromtimestamp(
+                os.path.getmtime(path)
+            ).replace(microsecond=0)
+        except Exception as e:
+            logger.error(str(e))
+            
+            
     async def thumbnails(self, key, path):
         thumb = os.path.join(config.thumbnails_path, key)
         if os.path.exists(thumb):
