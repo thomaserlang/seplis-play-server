@@ -5,7 +5,6 @@ from seplis_play_server import config, utils, logger, models, schemas
 from seplis_play_server.client import client
 from seplis_play_server.database import database
 from guessit import guessit
-
 from .base import Play_scan
 
 
@@ -19,6 +18,7 @@ class Movie_scan(Play_scan):
             cleanup_mode=cleanup_mode,
         )
 
+
     async def scan(self):
         logger.info(f'Scanning: {self.scan_path}')
         files = self.get_files()
@@ -28,6 +28,7 @@ class Movie_scan(Play_scan):
                 await self.save_item(title, f)  
             else:
                 logger.debug(f'"{f}" didn\'t match any pattern')
+
 
     def parse(self, filename):
         d = guessit(filename, '-t movie')
@@ -39,6 +40,7 @@ class Movie_scan(Play_scan):
                 t += f" {d['year']}"
             return t        
         logger.info(f'{filename} doesn\'t look like a movie')
+
 
     async def save_item(self, item: str, path: str):
         movie_id = await self.lookup(item)
@@ -83,6 +85,7 @@ class Movie_scan(Play_scan):
                 asyncio.create_task(self.thumbnails(f'movie-{movie_id}', path))
             return True
 
+
     async def add_to_index(self, movie_id: int, created_at: datetime = None):
         if self.cleanup_mode:
             return
@@ -103,6 +106,7 @@ class Movie_scan(Play_scan):
             logger.error(f'[movie-{movie_id}] Faild to add the movie to the play server index ({config.server_id}): {r.content}')
         else:
             logger.info(f'[movie-{movie_id}] Added to play server index ({config.server_id})')
+
 
     async def lookup(self, title: str):
         logger.debug(f'Looking for a movie with title: "{title}"')
@@ -134,40 +138,40 @@ class Movie_scan(Play_scan):
                 logger.debug(f'[movie-{movie.movie_id}] Found from cache: {movie.movie_title}')
                 return movie.movie_id
 
-    async def delete_item(self, item, path):        
-        movie_id = await self.lookup(item)
+
+    async def delete_path(self, path):
         async with database.session() as session:
-            m = await session.scalar(sa.select(models.Movie.movie_id).where(
-                models.Movie.movie_id == movie_id,
+            movie_id = await session.scalar(sa.select(models.Movie.movie_id).where(
                 models.Movie.path == path,
             ))
-            if m:
+            if movie_id:
                 await session.execute(sa.delete(models.Movie).where(
-                    models.Movie.movie_id == movie_id,
                     models.Movie.path == path,
                 ))
                 await session.commit()
 
                 await self.delete_from_index(movie_id=movie_id, session=session)
 
-                logger.info(f'[movie-{movie_id}] Deleted movie: {item}, path: {path}')
+                logger.info(f'[movie-{movie_id}] Deleted path: {path}')
                 return True
                 
         return False
 
+
     async def delete_from_index(self, movie_id: int, session):
         if self.cleanup_mode:
             return
-        m = await session.scalar(sa.select(models.Movie).where(
-            models.Movie.movie_id == movie_id,
-        ))
-        if m:
-            return
         if config.server_id:
-            r = await client.delete(f'/2/play-servers/{config.server_id}/movies/{movie_id}', 
-            headers={
-                'Authorization': f'Secret {config.secret}'
-            })
+            m = await session.scalar(sa.select(models.Movie).where(
+                models.Movie.movie_id == movie_id,
+            ))
+            if m:
+                return
+            r = await client.delete(f'/2/play-servers/{config.server_id}/movies/{movie_id}',
+                headers={
+                    'Authorization': f'Secret {config.secret}'
+                }
+            )
             if r.status_code >= 400:
                 logger.error(f'[movie-{movie_id}] Faild to inform that we have the movie: {r.content}')
             else:

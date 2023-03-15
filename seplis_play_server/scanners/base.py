@@ -18,7 +18,7 @@ class Play_scan:
     def parse(self, filename):
         raise NotImplementedError()
 
-    async def delete_item(self, item, path):
+    async def delete_path(self, item, path):
         raise NotImplementedError()
 
     async def scan(self):
@@ -87,7 +87,7 @@ class Play_scan:
         except Exception as e:
             logger.error(str(e))
             
-            
+
     async def thumbnails(self, key, path):
         thumb = os.path.join(config.thumbnails_path, key)
         if os.path.exists(thumb):

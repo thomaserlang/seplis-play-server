@@ -145,7 +145,7 @@ async def test_save_item(play_db_test: Database):
         r = r.all()
         assert len(r) == 3
 
-    await scanner.delete_item(episodes[0][0], episodes[0][1])
+    await scanner.delete_path(episodes[0][1])
 
     async with play_db_test.session() as session:
         r = await session.scalars(sa.select(models.Episode))

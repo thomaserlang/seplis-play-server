@@ -39,7 +39,7 @@ async def test_movies(play_db_test: Database):
         assert r.path == 'Uncharted.mkv'
         assert r.meta_data == {'some': 'data'}
 
-    await scanner.delete_item('Uncharted', 'Uncharted.mkv')
+    await scanner.delete_path('Uncharted.mkv')
     async with play_db_test.session() as session:
         r = await session.scalar(sa.select(models.Movie))
     assert r == None

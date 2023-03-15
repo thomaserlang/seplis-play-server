@@ -53,4 +53,4 @@ async def parse(scanner: Play_scan, path: str, changed: Change, waiting: dict):
             await scanner.save_item(parsed, path)
         elif changed == Change.deleted:
             logger.info(f'Deleted: {path}')
-            await scanner.delete_item(parsed, path)
+            await scanner.delete_path(path)

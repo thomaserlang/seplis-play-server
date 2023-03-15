@@ -21,6 +21,7 @@ class Episode_scan(Play_scan):
         self.episode_number = Episode_number(scanner=self)
         self.not_found_series = []
 
+
     async def scan(self):
         logger.info(f'Scanning: {self.scan_path}')
         files = self.get_files()
@@ -30,6 +31,7 @@ class Episode_scan(Play_scan):
                 await self.save_item(episode, f)
             else:
                 logger.debug(f'"{f}" didn\'t match any pattern')
+
 
     def parse(self, filename):
         for pattern in constants.SERIES_FILENAME_PATTERNS:
@@ -46,6 +48,7 @@ class Episode_scan(Play_scan):
                 logger.exception(f'episode parse re error: {error}')
             except:
                 logger.exception(f'episode parse pattern: {pattern}')
+
 
     async def episode_series_id_lookup(self, episode):
         '''
@@ -65,6 +68,7 @@ class Episode_scan(Play_scan):
             self.not_found_series.append(episode.file_title)
             logger.info(f'No series found for title: "{episode.file_title}"')
         return False
+
 
     async def episode_number_lookup(self, episode):
         '''
@@ -88,6 +92,7 @@ class Episode_scan(Play_scan):
         else:
             logger.info(f'[series-{episode.series_id}] No episode found for {value}')
         return False
+
 
     async def save_item(self, item, path):
         '''
@@ -133,6 +138,7 @@ class Episode_scan(Play_scan):
                 asyncio.create_task(self.thumbnails(f'episode-{item.series_id}-{item.number}', path))
             return True
 
+
     async def add_to_index(self, series_id: int, episode_number: int, created_at: datetime = None):
         if self.cleanup_mode:
             return
@@ -158,36 +164,27 @@ class Episode_scan(Play_scan):
             logger.info(f'[episode-{series_id}-{episode_number}] Added to play server index ({config.server_id})')
 
 
-    async def delete_item(self, item, path):        
+    async def delete_path(self, path):        
         '''
         :param episode: `Parsed_episode()`
         :returns: bool
         '''
-        if not item.series_id:
-            if not await self.episode_series_id_lookup(item):
-                return False
-        if not item.number:
-            if not await self.episode_number_lookup(item):
-                return False
         async with database.session() as session:
-            ep = await session.scalar(sa.select(models.Episode.number).where(
-                models.Episode.series_id == item.series_id,
-                models.Episode.number == item.number,
+            episode = await session.scalar(sa.select(models.Episode).where(
                 models.Episode.path == path,
             ))
-            if ep:
-                await session.execute(sa.delete(models.Episode).where(                    
-                    models.Episode.series_id == item.series_id,
-                    models.Episode.number == item.number,
+            if episode:
+                await session.execute(sa.delete(models.Episode).where(
                     models.Episode.path == path,
                 ))
                 await session.commit()
 
-                await self.delete_from_index(series_id=item.series_id, episode_number=item.number, session=session)
+                await self.delete_from_index(series_id=episode.series_id, episode_number=episode.number, session=session)
 
-                logger.info(f'[episode-{item.series_id}-{item.number}] Deleted: {path}')
+                logger.info(f'[episode-{episode.series_id}-{episode.number}] Deleted: {path}')
                 return True
         return False
+
 
     async def delete_from_index(self, series_id: int, episode_number: int, session):
         if self.cleanup_mode:
