@@ -51,37 +51,38 @@ class Movie_scan(Play_scan):
             modified_time = self.get_file_modified_time(path)
             
             if not movie or (movie.modified_time != modified_time) or not movie.meta_data:
-                
                 if not movie_id:
                     movie_id = await self.lookup(item)
                     if not movie_id:
                         return
-                    
-                metadata = await self.get_metadata(path)
-                if not metadata:
-                    return
+                try:
+                    metadata = await self.get_metadata(path)
+                    if not metadata:
+                        return
 
-                if movie:
-                    sql = sa.update(models.Movie).where(
-                        models.Movie.path == path,
-                    ).values({
-                        models.Movie.movie_id: movie_id,
-                        models.Movie.meta_data: metadata,
-                        models.Movie.modified_time: modified_time,
-                    })
-                else:
-                    sql = sa.insert(models.Movie).values({
-                        models.Movie.movie_id: movie_id,
-                        models.Movie.path: path,
-                        models.Movie.meta_data: metadata,
-                        models.Movie.modified_time: modified_time,
-                    })
-                await session.execute(sql)
-                await session.commit()
+                    if movie:
+                        sql = sa.update(models.Movie).where(
+                            models.Movie.path == path,
+                        ).values({
+                            models.Movie.movie_id: movie_id,
+                            models.Movie.meta_data: metadata,
+                            models.Movie.modified_time: modified_time,
+                        })
+                    else:
+                        sql = sa.insert(models.Movie).values({
+                            models.Movie.movie_id: movie_id,
+                            models.Movie.path: path,
+                            models.Movie.meta_data: metadata,
+                            models.Movie.modified_time: modified_time,
+                        })
+                    await session.execute(sql)
+                    await session.commit()
 
-                await self.add_to_index(movie_id=movie_id, created_at=modified_time)
+                    await self.add_to_index(movie_id=movie_id, created_at=modified_time)
 
-                logger.info(f'[movie-{movie_id}] Saved {path}')
+                    logger.info(f'[movie-{movie_id}] Saved {path}')
+                except Exception as e:
+                    logger.error(str(e))
             else:
                 logger.info(f'[movie-{movie_id}] Nothing changed for {path}')
             if self.make_thumbnails:

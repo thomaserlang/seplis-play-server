@@ -12,17 +12,22 @@ class Play_scan:
         self.make_thumbnails = make_thumbnails
         self.cleanup_mode = cleanup_mode
 
+
     async def save_item(self, item, path):
         raise NotImplementedError()
+
 
     def parse(self, filename):
         raise NotImplementedError()
 
+
     async def delete_path(self, item, path):
         raise NotImplementedError()
 
+
     async def scan(self):
         raise NotImplementedError()
+
 
     def get_files(self):
         '''
@@ -42,6 +47,7 @@ class Play_scan:
                     os.path.join(dirname, file_)
                 )
         return files
+
 
     async def get_metadata(self, path):
         '''
@@ -78,6 +84,7 @@ class Play_scan:
             data = data.decode('utf-8')
         data = utils.json_loads(data)
         return data
+
 
     def get_file_modified_time(self, path):
         try:

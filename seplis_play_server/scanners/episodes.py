@@ -115,33 +115,36 @@ class Episode_scan(Play_scan):
                     if not item.number:
                         if not await self.episode_number_lookup(item):
                             return False
-                metadata = await self.get_metadata(path)
+                try:
+                    metadata = await self.get_metadata(path)
 
-                if ep:
-                    sql = sa.update(models.Episode).where(
-                        models.Episode.path == path,
-                    ).values({
-                        models.Episode.meta_data: metadata,
-                        models.Episode.modified_time: modified_time,
-                    })
-                else:
-                    sql = sa.insert(models.Episode).values({
-                        models.Episode.series_id: item.series_id,
-                        models.Episode.number: item.number,
-                        models.Episode.path: path,
-                        models.Episode.meta_data: metadata,
-                        models.Episode.modified_time: modified_time,
-                    })
-                await session.execute(sql)
-                await session.commit()
+                    if ep:
+                        sql = sa.update(models.Episode).where(
+                            models.Episode.path == path,
+                        ).values({
+                            models.Episode.meta_data: metadata,
+                            models.Episode.modified_time: modified_time,
+                        })
+                    else:
+                        sql = sa.insert(models.Episode).values({
+                            models.Episode.series_id: item.series_id,
+                            models.Episode.number: item.number,
+                            models.Episode.path: path,
+                            models.Episode.meta_data: metadata,
+                            models.Episode.modified_time: modified_time,
+                        })
+                    await session.execute(sql)
+                    await session.commit()
 
-                await self.add_to_index(
-                    series_id=item.series_id, 
-                    episode_number=item.number,
-                    created_at=modified_time,
-                )
+                    await self.add_to_index(
+                        series_id=item.series_id, 
+                        episode_number=item.number,
+                        created_at=modified_time,
+                    )
 
-                logger.info(f'[episode-{item.series_id}-{item.number}] Saved {path}')
+                    logger.info(f'[episode-{item.series_id}-{item.number}] Saved {path}')
+                except Exception as e:
+                    logger.error(str(e))
             else:                
                 logger.info(f'[episode-{item.series_id}-{item.number}] Nothing changed for {path}')
             if self.make_thumbnails:
