@@ -43,26 +43,29 @@ class Movie_scan(Play_scan):
 
 
     async def save_item(self, item: str, path: str):
-        movie_id = await self.lookup(item)
-        if not movie_id:
-            return
-
         async with database.session() as session:
             movie = await session.scalar(sa.select(models.Movie).where(
-                models.Movie.movie_id == movie_id,
                 models.Movie.path == path,
             ))
+            movie_id = movie.movie_id if movie else None
             modified_time = self.get_file_modified_time(path)
+            
             if not movie or (movie.modified_time != modified_time) or not movie.meta_data:
+                
+                if not movie_id:
+                    movie_id = await self.lookup(item)
+                    if not movie_id:
+                        return
+                    
                 metadata = await self.get_metadata(path)
                 if not metadata:
                     return
 
                 if movie:
                     sql = sa.update(models.Movie).where(
-                        models.Movie.movie_id == movie_id,
                         models.Movie.path == path,
                     ).values({
+                        models.Movie.movie_id: movie_id,
                         models.Movie.meta_data: metadata,
                         models.Movie.modified_time: modified_time,
                     })

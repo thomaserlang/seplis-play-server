@@ -99,30 +99,40 @@ class Episode_scan(Play_scan):
         :param episode: `Parsed_episode()`
         :returns: bool
         '''
-        if not item.series_id:
-            if not await self.episode_series_id_lookup(item):
-                return False
-        if not item.number:
-            if not await self.episode_number_lookup(item):
-                return False
         async with database.session() as session:
             ep = await session.scalar(sa.select(models.Episode).where(
-                models.Episode.series_id == item.series_id,
-                models.Episode.number == item.number,
                 models.Episode.path == path,
             ))
-
+            if ep:
+                item.series_id = ep.series_id
+                item.number = ep.number
             modified_time = self.get_file_modified_time(path)
             if not ep or (ep.modified_time != modified_time) or not ep.meta_data:
+                if not ep:
+                    if not item.series_id:
+                        if not await self.episode_series_id_lookup(item):
+                            return False
+                    if not item.number:
+                        if not await self.episode_number_lookup(item):
+                            return False
                 metadata = await self.get_metadata(path)
-                e = models.Episode(
-                    series_id=item.series_id,
-                    number=item.number,
-                    path=path,
-                    meta_data=metadata,
-                    modified_time=modified_time,
-                )
-                await session.merge(e)
+
+                if ep:
+                    sql = sa.update(models.Episode).where(
+                        models.Episode.path == path,
+                    ).values({
+                        models.Episode.meta_data: metadata,
+                        models.Episode.modified_time: modified_time,
+                    })
+                else:
+                    sql = sa.insert(models.Episode).values({
+                        models.Episode.series_id: item.series_id,
+                        models.Episode.number: item.number,
+                        models.Episode.path: path,
+                        models.Episode.meta_data: metadata,
+                        models.Episode.modified_time: modified_time,
+                    })
+                await session.execute(sql)
                 await session.commit()
 
                 await self.add_to_index(

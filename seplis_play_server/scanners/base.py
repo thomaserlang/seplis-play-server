@@ -1,5 +1,5 @@
 import os, os.path, subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from seplis_play_server import config, utils, logger
 
 class Play_scan:
@@ -83,7 +83,7 @@ class Play_scan:
         try:
             return datetime.utcfromtimestamp(
                 os.path.getmtime(path)
-            ).replace(microsecond=0)
+            ).replace(microsecond=0, tzinfo=timezone.utc)
         except Exception as e:
             logger.error(str(e))
             

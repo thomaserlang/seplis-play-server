@@ -5,7 +5,7 @@ import yaml, tempfile
 
 
 class ConfigLoggingModel(BaseModel):
-    level: Literal['notset', 'debug', 'info', 'warn', 'error', 'critical'] = 'warn'
+    level: Literal['notset', 'debug', 'info', 'warn', 'error', 'critical'] = 'info'
     path: pathlib.Path | None
     max_size: int = 100 * 1000 * 1000 # ~ 95 mb
     num_backups = 10
