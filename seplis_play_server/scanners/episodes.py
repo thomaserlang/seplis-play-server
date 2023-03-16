@@ -220,9 +220,9 @@ class Episode_scan(Play_scan):
             }
         )
         if r.status_code >= 400:
-            logger.error(f'[episode-{series_id}-{episode_number}] Faild to inform that we have the episode: {r.content}')
+            logger.error(f'[episode-{series_id}-{episode_number}] Faild to remove the episode from the play server index: {r.content}')
         else:
-            logger.info(f'[episode-{series_id}-{episode_number}] Added to play server index')
+            logger.info(f'[episode-{series_id}-{episode_number}] Removed from play server index')
 
 
     def _parse_episode_info_from_file(self, match):
