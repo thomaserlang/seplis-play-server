@@ -156,7 +156,7 @@ class Transcoder:
 
         if codec != 'copy' and config.ffmpeg_hwaccel_enabled:
             self.ffmpeg_args.extend([
-                {'-vf': 'format=nv12,hwupload'},
+                {'-vf': f'scale_{config.ffmpeg_hwaccel}=format=nv12,hwupload'},
             ])
             codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
 
