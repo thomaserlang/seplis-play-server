@@ -264,7 +264,7 @@ class Transcoder:
         return temp_folder
 
     def segment_time(self):
-        return 5 if self.find_ffmpeg_arg('-c:v') == 'copy' else 1
+        return 5 if self.find_ffmpeg_arg('-c:v') == 'copy' else 3
 
 def subprocess_env():
     env = {}
