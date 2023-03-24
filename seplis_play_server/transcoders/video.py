@@ -121,9 +121,15 @@ class Transcoder:
         )
 
     async def set_ffmpeg_args(self):
-        args = [
-            {'-analyzeduration': '20000000'},
-            {'-probesize': '20000000'},
+        self.ffmpeg_args = []
+        if config.ffmpeg_hwaccel_enabled:
+            self.ffmpeg_args.append({'-hwaccel': config.ffmpeg_hwaccel})
+            if config.ffmpeg_hwaccel_device:
+                self.ffmpeg_args.append({'-hwaccel_device': config.ffmpeg_hwaccel_device})
+
+        self.ffmpeg_args.extend([
+            {'-analyzeduration': '200M'},
+            {'-probesize': '200M'},
             {'-ss': str(self.settings.start_time or 0)},
             {'-i': self.metadata['format']['filename']},
             {'-y': None},
@@ -133,9 +139,7 @@ class Transcoder:
             {'-start_at_zero': None},
             {'-avoid_negative_ts': 'disabled'},
             {'-muxdelay': '0'},
-        ]
-
-        self.ffmpeg_args = args
+        ])
         self.set_video()
         self.set_pix_format()
         self.set_audio()
@@ -150,7 +154,17 @@ class Transcoder:
             not self.settings.width:
             codec = 'copy'
 
-        self.ffmpeg_args.append({'-c:v': codec})
+        if codec != 'copy' and config.ffmpeg_hwaccel_enabled:
+            self.ffmpeg_args.extend([
+                {'-vf': 'format=nv12,hwupload'},
+            ])
+            codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
+
+        self.ffmpeg_args.extend([
+            {'-map': '0:v:0'},
+            {'-c:v': codec},
+        ])
+
         if codec == 'lib264':
             self.ffmpeg_args.extend([
                 {'-x264opts': 'subme=0:me_range=4:rc_lookahead=10:me=hex:8x8dct=0:partitions=none'},
@@ -165,10 +179,6 @@ class Transcoder:
                 {'-g': '24'},
             ])
 
-        self.ffmpeg_args.extend([
-            {'-map': '0:v:0'},
-        ])
-        
         if codec == 'copy':
             self.ffmpeg_args.insert(0, {'-noaccurate_seek': None})
         else:
@@ -178,10 +188,10 @@ class Transcoder:
             if width < self.video_stream['width']:
                 # keeps the aspect ratio for the height
                 self.ffmpeg_args.append({'-filter:v': f'scale=width={width}:height=-2'})
-
-            self.ffmpeg_args.extend([
-                {'-crf': self._get_crf(width, codec)}
-            ])
+            if not config.ffmpeg_hwaccel_enabled:
+                self.ffmpeg_args.extend([
+                    {'-crf': self._get_crf(width, codec)}
+                ])
 
     def _get_crf(self, width, codec):
         crf = '23'
