@@ -24,13 +24,16 @@ class ConfigModel(BaseSettings):
     secret: str
     scan: list[ConfigPlayScanModel]
     media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg']
+    
     ffmpeg_folder: pathlib.Path = '/bin'
     ffmpeg_loglevel = '8'
     ffmpeg_logfile: pathlib.Path | None
     ffmpeg_preset: Literal['veryslow', 'slower', 'slow', 'medium', 'fast', 'faster', 'veryfast', 'superfast', 'ultrafast'] = 'veryfast' 
     ffmpeg_hwaccel_enabled = False
-    ffmpeg_hwaccel_device: str | None
+    ffmpeg_hwaccel_device: str = '/dev/dri/renderD128'
     ffmpeg_hwaccel: str = 'qsv'
+    ffmpeg_hwaccel_low_powermode = True
+    ffmpeg_tonemap_enabled = True
 
     port = 8003
     temp_folder: pathlib.Path = os.path.join(tempfile.gettempdir(), 'seplis_play')
