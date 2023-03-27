@@ -1,16 +1,17 @@
 import os, asyncio, sys
 import shutil
-from typing import Dict, Literal, Optional
-from pydantic import BaseModel, constr
+from fastapi import Query
+from typing import Dict, Literal, Optional, Annotated
+from pydantic import BaseModel, constr, validator
 from seplis_play_server import config, logger, constants
 
 class Transcode_settings(BaseModel):
 
     play_id: constr(min_length=1)
     session: constr(min_length=1)
-    supported_video_codecs: constr(min_length=1)
-    supported_audio_codecs: constr(min_length=1)
-    supported_pixel_formats: constr(min_length=1)
+    supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
+    supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
+    supported_pixel_formats: Annotated[list[constr(min_length=1)], Query()]
     format: Literal['pipe', 'hls', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
@@ -22,6 +23,13 @@ class Transcode_settings(BaseModel):
     width: Optional[int] | constr(max_length=0)
     video_bitrate: Optional[int] | constr(max_length=0)
     client_width: Optional[int] | constr(max_length=0)
+
+    @validator('supported_video_codecs', 'supported_audio_codecs', 'supported_pixel_formats', pre=True, whole=True)
+    def _b_as_json(cls, v):
+        l = []
+        for a in v:
+            l.extend([s.strip() for s in a.split(',')])
+        return l
 
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
@@ -218,22 +226,22 @@ class Transcoder:
 
 
     def get_filter(self, width: int):
-        vf = []        
+        vf = []
+        tonemap = False
+        hdr = self.video_stream['pix_fmt'] == 'yuv420p10le' and \
+                self.video_stream.get('color_primaries') == 'bt2020' and \
+                self.video_stream.get('color_transfer') == 'smpte2084'
 
         if self.video_stream['pix_fmt'] in self.settings.supported_pixel_formats:
             pix_fmt = self.video_stream['pix_fmt']
-            tonemap = False
         else:
             pix_fmt = self.settings.transcode_pixel_format
-            tonemap = config.ffmpeg_tonemap_enabled and pix_fmt == 'yuv420p' and \
-                self.video_stream.get('color_primaries') == 'bt2020' and \
-                self.video_stream.get('color_transfer') == 'smpte2084'
-                
-        if self.video_stream['pix_fmt'] == 'yuv420p':
-            vf.append('setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709')
+            tonemap = config.ffmpeg_tonemap_enabled and hdr  
 
-        elif self.video_stream['pix_fmt'] == 'yuv420p10le':
+        if (pix_fmt == 'yuv420p10le' or tonemap) and hdr:
             vf.append('setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc')
+        else:            
+            vf.append('setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709')
 
         if not config.ffmpeg_hwaccel_enabled:
             if width:
@@ -241,28 +249,22 @@ class Transcoder:
             vf.append(f'format={pix_fmt}')
             # missing software tonemap
             return
-            
-        if pix_fmt == 'yuv420p':
+        
+        if pix_fmt == 'yuv420p10le' and hdr:
+            # fails with h264
+            format_ = 'p010le' if self.settings.transcode_video_codec != 'h264' else 'nv12'
+        else:            
             format_ = 'nv12'
-        elif pix_fmt == 'yuv420p10le':
-            if self.settings.transcode_video_codec == 'h264':
-                format_ = 'nv12'# p010le fails if output codec is h264
-            else:
-                format_ = 'p010le'
             
         if tonemap:
             if config.ffmpeg_hwaccel in ('qsv', 'vaapi'): # SDR
-                # unsure why but some but some the tonemapping hangs
-                # only difference looks to be chroma_location
-                if self.video_stream.get('chroma_location') == 'left':
-                    vf.append('tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709')
-                    # Brightness: b=0 - Contrast = c=1.2
-                    vf.append('procamp_vaapi=b=0:c=1.2:extra_hw_frames=16')
-            
+                vf.append('tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709')
+                # Brightness: b=0 - Contrast: c=1.2
+                vf.append('procamp_vaapi=b=0:c=1.2:extra_hw_frames=16')            
 
         width_filter = f'w={width}:h=-2:' if width != self.video_stream['width'] else ''
 
-        if config.ffmpeg_hwaccel == 'qsv':            
+        if config.ffmpeg_hwaccel == 'qsv':
             vf.append(f'scale_vaapi={width_filter}format={format_},hwmap=derive_device=qsv,format=qsv')
 
         else:
