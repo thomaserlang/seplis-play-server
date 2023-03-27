@@ -265,10 +265,13 @@ class Transcoder:
         width_filter = f'w={width}:h=-2:' if width != self.video_stream['width'] else ''
 
         if config.ffmpeg_hwaccel == 'qsv':
-            vf.append(f'scale_vaapi={width_filter}format={format_},hwmap=derive_device=qsv,format=qsv')
+            if width_filter or self.video_stream['pix_fmt'] != pix_fmt:
+                vf.append(f'scale_vaapi={width_filter}format={format_}')
+            vf.append('hwmap=derive_device=qsv,format=qsv')
 
         else:
-            vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}format={format_}')
+            if width_filter or self.video_stream['pix_fmt'] != pix_fmt:
+                vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}format={format_}')
 
         return vf
 
@@ -317,7 +320,6 @@ class Transcoder:
             params.append({'-tag:v': 'hvc1'})
 
         params.extend(self.get_video_bitrate_params(codec))
-            
         return params
 
 
