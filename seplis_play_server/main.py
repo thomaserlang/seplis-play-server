@@ -25,7 +25,7 @@ app.include_router(keep_alive.router)
 app.include_router(subtitle_file.router)
 app.include_router(transcode.router)
 app.include_router(close_session.router)
-app.mount('/files', StaticFiles(directory=config.temp_folder), name='files')
+app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
 
 @app.on_event('startup')
 async def startup():

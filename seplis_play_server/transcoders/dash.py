@@ -14,7 +14,7 @@ class Dash_transcoder(video.Transcoder):
 
     @property
     def media_path(self) -> str:
-        return os.path.join(self.temp_folder, self.media_name)
+        return os.path.join(self.transcode_folder, self.media_name)
 
     @property
     def media_name(self) -> str:

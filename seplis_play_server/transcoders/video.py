@@ -2,7 +2,7 @@ import os, asyncio, sys
 import shutil
 from fastapi import Query
 from typing import Dict, Literal, Optional, Annotated
-from pydantic import BaseModel, constr, validator
+from pydantic import BaseModel, constr, conint, validator
 from seplis_play_server import config, logger, constants
 
 class Transcode_settings(BaseModel):
@@ -11,11 +11,11 @@ class Transcode_settings(BaseModel):
     session: constr(min_length=1)
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
-    supported_pixel_formats: Annotated[list[constr(min_length=1)], Query()]
+    supported_video_bit_depth: conint(ge=8) = 8
     format: Literal['pipe', 'hls', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
-    transcode_pixel_format: Literal['yuv420p', 'yuv420p10le']
+    supports_hdr: Annotated[bool, Query] = False
 
     start_time: Optional[int] | constr(max_length=0)
     audio_lang: Optional[str]
@@ -24,7 +24,7 @@ class Transcode_settings(BaseModel):
     video_bitrate: Optional[int] | constr(max_length=0)
     client_width: Optional[int] | constr(max_length=0)
 
-    @validator('supported_video_codecs', 'supported_audio_codecs', 'supported_pixel_formats', pre=True, whole=True)
+    @validator('supported_video_codecs', 'supported_audio_codecs', pre=True, whole=True)
     def _b_as_json(cls, v):
         l = []
         for a in v:
@@ -33,7 +33,7 @@ class Transcode_settings(BaseModel):
 
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
-    temp_folder: Optional[str]
+    transcode_folder: Optional[str]
     call_later: asyncio.TimerHandle
 
     class Config:
@@ -65,11 +65,11 @@ class Transcoder:
         self.input_codec = self.video_stream['codec_name']
         self.output_codec_lib = None
         self.ffmpeg_args = None
-        self.temp_folder = None
+        self.transcode_folder = None
         
 
     async def start(self, send_data_callback=None) -> bool | bytes:
-        self.temp_folder = self.create_temp_folder()
+        self.transcode_folder = self.create_transcode_folder()
         if self.settings.session in sessions:
             try:
                 return await asyncio.wait_for(self.wait_for_media(), timeout=5)
@@ -82,7 +82,7 @@ class Transcoder:
         self.process = await asyncio.create_subprocess_exec(
             os.path.join(config.ffmpeg_folder, 'ffmpeg'),
             *args,
-            env=subprocess_env(),
+            env=subprocess_env(self.settings.session, 'transcode'),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -127,7 +127,7 @@ class Transcoder:
         logger.info(f'[{self.settings.session}] Registered')
         sessions[self.settings.session] = Session_model(
             process=self.process,
-            temp_folder=self.temp_folder,
+            transcode_folder=self.transcode_folder,
             call_later=loop.call_later(
                 config.session_timeout,
                 close_session_callback,
@@ -204,6 +204,9 @@ class Transcoder:
             self.ffmpeg_args.append({'-autoscale': '0'})
             if config.ffmpeg_hwaccel_low_powermode:
                 self.ffmpeg_args.append({'-low_power': '1'})
+            if self.settings.transcode_video_codec == 'hevc':
+                # Fails with "Error while filtering: Cannot allocate memory" if not added
+                self.ffmpeg_args.append({'-async_depth': '1'})
         
 
         vf = self.get_filter(width)
@@ -216,7 +219,10 @@ class Transcoder:
         if self.input_codec not in self.settings.supported_video_codecs:
             return False
         
-        if self.video_stream['pix_fmt'] not in self.settings.supported_pixel_formats:
+        if self.get_video_bit_depth() > self.settings.supported_video_bit_depth:
+            return False
+        
+        if self.has_hdr() and not self.settings.supports_hdr and config.ffmpeg_tonemap_enabled:
             return False
 
         if self.settings.width and self.settings.width < self.video_stream['width']:
@@ -227,18 +233,16 @@ class Transcoder:
 
     def get_filter(self, width: int):
         vf = []
-        tonemap = False
-        hdr = self.video_stream['pix_fmt'] == 'yuv420p10le' and \
-                self.video_stream.get('color_primaries') == 'bt2020' and \
-                self.video_stream.get('color_transfer') == 'smpte2084'
-
-        if self.video_stream['pix_fmt'] in self.settings.supported_pixel_formats:
+        hdr = self.has_hdr()
+        
+        if self.get_video_bit_depth() <= self.settings.supported_video_bit_depth:
             pix_fmt = self.video_stream['pix_fmt']
         else:
-            pix_fmt = self.settings.transcode_pixel_format
-            tonemap = config.ffmpeg_tonemap_enabled and hdr  
+            pix_fmt = 'yuv420p' if self.settings.supported_video_bit_depth == 8 else 'yuv420p10le'
+            
+        tonemap = config.ffmpeg_tonemap_enabled and hdr and not self.settings.supports_hdr
 
-        if (pix_fmt == 'yuv420p10le' or tonemap) and hdr:
+        if tonemap or (hdr and self.settings.supports_hdr):
             vf.append('setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc')
         else:            
             vf.append('setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709')
@@ -250,9 +254,8 @@ class Transcoder:
             # missing software tonemap
             return
         
-        if pix_fmt == 'yuv420p10le' and hdr:
-            # fails with h264
-            format_ = 'p010le' if self.settings.transcode_video_codec != 'h264' else 'nv12'
+        if pix_fmt == 'yuv420p10le' and self.output_codec_lib != 'h264_qsv':
+            format_ = 'p010le'
         else:            
             format_ = 'nv12'
             
@@ -260,20 +263,35 @@ class Transcoder:
             if config.ffmpeg_hwaccel in ('qsv', 'vaapi'): # SDR
                 vf.append('tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709')
                 # Brightness: b=0 - Contrast: c=1.2
-                vf.append('procamp_vaapi=b=0:c=1.2:extra_hw_frames=16')            
+                vf.append('procamp_vaapi=b=0:c=1.2:extra_hw_frames=16')
 
         width_filter = f'w={width}:h=-2:' if width != self.video_stream['width'] else ''
 
         if config.ffmpeg_hwaccel == 'qsv':
-            if width_filter or self.video_stream['pix_fmt'] != pix_fmt:
+            if width_filter or pix_fmt != self.video_stream['pix_fmt']:
                 vf.append(f'scale_vaapi={width_filter}format={format_}')
             vf.append('hwmap=derive_device=qsv,format=qsv')
 
         else:
-            if width_filter or self.video_stream['pix_fmt'] != pix_fmt:
+            if width_filter or pix_fmt != self.video_stream['pix_fmt']:
                 vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}format={format_}')
 
         return vf
+
+
+    def get_video_bit_depth(self):
+        pix_fmt = self.video_stream['pix_fmt']
+        if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
+            return 10
+        if pix_fmt in ('yuv420p12le', 'yuv444p12le'):
+            return 12
+        return 8
+
+
+    def has_hdr(self):
+        return self.video_stream['pix_fmt'] == 'yuv420p10le' and \
+                self.video_stream.get('color_primaries') == 'bt2020' and \
+                self.video_stream.get('color_transfer') == 'smpte2084'
 
 
     def get_quality_params(self, width: int, codec: str):
@@ -320,6 +338,8 @@ class Transcoder:
             params.append({'-tag:v': 'hvc1'})
 
         params.extend(self.get_video_bitrate_params(codec))
+        params.append({'-level': '51'})
+        params.append({'-keyint_min:v:0': '72'})
         return params
 
 
@@ -438,20 +458,19 @@ class Transcoder:
                 a[key] = new_value
                 break
 
-    def create_temp_folder(self):
-        temp_folder = os.path.join(config.temp_folder, self.settings.session)
-        if not os.path.exists(temp_folder):
-            os.makedirs(temp_folder)
-        return temp_folder
+    def create_transcode_folder(self):
+        transcode_folder = os.path.join(config.transcode_folder, self.settings.session)
+        if not os.path.exists(transcode_folder):
+            os.makedirs(transcode_folder)
+        return transcode_folder
 
     def segment_time(self):
         return 6 if self.output_codec_lib == 'copy' else 3
 
 
-def subprocess_env():
+def subprocess_env(session, type_):
     env = {}
-    if config.ffmpeg_logfile:
-        env['FFREPORT'] = f'file=\'{config.ffmpeg_logfile}\':level={config.ffmpeg_loglevel}'
+    env['FFREPORT'] = f'file=\'{os.path.join(config.transcode_folder, f"ffmpeg_{session}_{type_}.log")}\':level={config.ffmpeg_loglevel}'
     return env
 
 
@@ -463,13 +482,7 @@ def to_subprocess_arguments(args):
             if value:
                 l.append(str(value))
     return l
-
-def subprocess_env() -> Dict:
-    env = {}
-    if config.ffmpeg_logfile:
-        env['FFREPORT'] = f'file=\'{config.ffmpeg_logfile}\':level={config.ffmpeg_loglevel}'
-    return env
-
+    
 
 def get_video_stream(metadata: Dict):
     for stream in metadata['streams']:
@@ -533,11 +546,11 @@ def close_session(session):
     except:
         pass
     try:
-        if s.temp_folder:
-            if os.path.exists(s.temp_folder):
-                shutil.rmtree(s.temp_folder)
+        if s.transcode_folder:
+            if os.path.exists(s.transcode_folder):
+                shutil.rmtree(s.transcode_folder)
             else:
-                logger.warning(f'[{session}] Path: {s.temp_folder} not found, can\'t delete it')  
+                logger.warning(f'[{session}] Path: {s.transcode_folder} not found, can\'t delete it')  
     except:
         pass          
     s.call_later.cancel()

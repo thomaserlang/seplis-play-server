@@ -26,7 +26,7 @@ class ConfigModel(BaseSettings):
     media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg']
     
     ffmpeg_folder: pathlib.Path = '/bin'
-    ffmpeg_loglevel = '8'
+    ffmpeg_loglevel = '40'
     ffmpeg_logfile: pathlib.Path | None
     ffmpeg_preset: Literal['veryslow', 'slower', 'slow', 'medium', 'fast', 'faster', 'veryfast', 'superfast', 'ultrafast'] = 'veryfast' 
     ffmpeg_hwaccel_enabled = False
@@ -36,7 +36,7 @@ class ConfigModel(BaseSettings):
     ffmpeg_tonemap_enabled = True
 
     port = 8003
-    temp_folder: pathlib.Path = os.path.join(tempfile.gettempdir(), 'seplis_play')
+    transcode_folder: pathlib.Path = os.path.join(tempfile.gettempdir(), 'seplis_play')
     thumbnails_path: pathlib.Path | None
     session_timeout = 10 # Timeout for HLS sessions
     server_id: str
@@ -74,8 +74,8 @@ if path:
 if not config:
     config = ConfigModel()
 
-if config.temp_folder:
+if config.transcode_folder:
     try:
-        os.makedirs(config.temp_folder, exist_ok=True)
+        os.makedirs(config.transcode_folder, exist_ok=True)
     except:
         pass
