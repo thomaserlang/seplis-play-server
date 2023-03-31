@@ -280,18 +280,11 @@ class Transcoder:
 
 
     def get_video_bit_depth(self):
-        pix_fmt = self.video_stream['pix_fmt']
-        if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
-            return 10
-        if pix_fmt in ('yuv420p12le', 'yuv444p12le'):
-            return 12
-        return 8
+        return get_video_bit_depth(self.video_stream)
 
 
     def has_hdr(self):
-        return self.video_stream['pix_fmt'] == 'yuv420p10le' and \
-                self.video_stream.get('color_primaries') == 'bt2020' and \
-                self.video_stream.get('color_transfer') == 'smpte2084'
+        return has_hdr(self.video_stream)
 
 
     def get_quality_params(self, width: int, codec: str):
@@ -484,12 +477,27 @@ def to_subprocess_arguments(args):
     return l
     
 
-def get_video_stream(metadata: Dict):
+def get_video_stream(metadata: dict):
     for stream in metadata['streams']:
         if stream['codec_type'] == 'video':
             return stream
     if not stream:
         raise Exception('No video stream')
+    
+
+def has_hdr(source: dict):
+    return source['pix_fmt'] == 'yuv420p10le' and \
+            source.get('color_primaries') == 'bt2020' and \
+            source.get('color_transfer') == 'smpte2084'
+
+
+def get_video_bit_depth(source: dict):
+    pix_fmt = source['pix_fmt']
+    if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
+        return 10
+    if pix_fmt in ('yuv420p12le', 'yuv444p12le'):
+        return 12
+    return 8
 
 
 def stream_index_by_lang(metadata: Dict, codec_type:str, lang: str):

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from ..transcoders.video import get_video_stream
+from ..transcoders.video import get_video_bit_depth, get_video_stream, has_hdr
 from ..dependencies import get_metadata
 
 router = APIRouter()
@@ -21,6 +21,8 @@ class Response_model(BaseModel):
     audio: list[Response_stream_model] = []
     subtitles: list[Response_stream_model] = []
     index: int
+    video_bit_depth: int
+    hdr: bool
 
 @router.get('/sources', response_model=list[Response_model])
 async def get_sources(metadata = Depends(get_metadata)):
@@ -36,6 +38,8 @@ async def get_sources(metadata = Depends(get_metadata)):
             height=video['height'],
             codec=video['codec_name'],
             duration=metad['format']['duration'],
+            video_bit_depth=get_video_bit_depth(video),
+            hdr=has_hdr(video),
             index=i,
         )
         data.append(d)
