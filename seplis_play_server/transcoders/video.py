@@ -140,8 +140,9 @@ class Transcoder:
             {'-analyzeduration': '200M'},
         ]
         self.set_hardware_decoder()
+        if self.settings.start_time:
+            self.ffmpeg_args.append({'-ss': str(self.settings.start_time or 0)})
         self.ffmpeg_args.extend([
-            {'-ss': str(self.settings.start_time or 0)},
             {'-autorotate': '0'},
             {'-i': self.metadata['format']['filename']},
             {'-y': None},
