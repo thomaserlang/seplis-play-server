@@ -254,8 +254,12 @@ class Transcoder:
             vf.append(f'format={pix_fmt}')
             # missing software tonemap
             return
-        
-        if pix_fmt == 'yuv420p10le' and self.output_codec_lib != 'h264_qsv':
+
+        if pix_fmt == 'yuv420p10le':
+            if self.output_codec_lib == 'h264_qsv':
+                pix_fmt = 'yuv420p'
+
+        if pix_fmt == 'yuv420p10le':
             format_ = 'p010le'
         else:            
             format_ = 'nv12'
