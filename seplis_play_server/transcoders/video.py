@@ -331,8 +331,6 @@ class Transcoder:
             params.append({'-tag:v': 'hvc1'})
 
         params.extend(self.get_video_bitrate_params(codec))
-        params.append({'-level': '51'})
-        params.append({'-keyint_min:v:0': '72'})
         return params
 
 
