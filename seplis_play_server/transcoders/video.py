@@ -24,8 +24,8 @@ class Transcode_settings(BaseModel):
     video_bitrate: Optional[int] | constr(max_length=0)
     client_width: Optional[int] | constr(max_length=0)
 
-    @validator('supported_video_codecs', 'supported_audio_codecs', pre=True, whole=True)
-    def _b_as_json(cls, v):
+    @validator('supported_video_codecs', 'supported_audio_codecs', pre=True, each_item=True)
+    def comma_string(cls, v):
         l = []
         for a in v:
             l.extend([s.strip() for s in a.split(',')])
