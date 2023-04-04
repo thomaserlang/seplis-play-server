@@ -51,8 +51,8 @@ async def get_sources(metadata = Depends(get_metadata)):
             if not title and not lang:
                 continue
             s = Response_stream_model(
-                title=title or lang,
-                language=lang or title,
+                title=title,
+                language=lang,
                 index=stream['index'],
                 codec=stream.get('codec_name'),
                 default=stream.get('disposition', {}).get('default', 0) == 1,
