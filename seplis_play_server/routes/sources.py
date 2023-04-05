@@ -22,7 +22,7 @@ class Source_model(BaseModel):
     audio: list[Source_stream_model] = []
     subtitles: list[Source_stream_model] = []
     index: int
-    video_bit_depth: int
+    video_color_bit_depth: int
     video_color_range: str
     video_color_range_type: str
 
@@ -41,7 +41,7 @@ async def get_sources(metadata = Depends(get_metadata)):
             height=video['height'],
             codec=video['codec_name'],
             duration=metad['format']['duration'],
-            video_bit_depth=get_video_color_bit_depth(video),
+            video_color_bit_depth=get_video_color_bit_depth(video),
             video_color_range=color_range.range,
             video_color_range_type=color_range.range_type,
             resolution=resolution_text(width=video['width'], height=video['height']),
