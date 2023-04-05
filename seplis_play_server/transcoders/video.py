@@ -6,16 +6,15 @@ from pydantic import BaseModel, constr, conint, validator
 from seplis_play_server import config, logger, constants
 
 class Transcode_settings(BaseModel):
-
     play_id: constr(min_length=1)
     session: constr(min_length=1)
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
-    supported_video_bit_depth: conint(ge=8) = 8
+    supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
+    supported_video_color_bit_depth: conint(ge=8) = 8
     format: Literal['pipe', 'hls', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
-    supports_hdr: Annotated[bool, Query] = False
 
     start_time: Optional[int] | constr(max_length=0)
     audio_lang: Optional[str]
@@ -24,12 +23,16 @@ class Transcode_settings(BaseModel):
     video_bitrate: Optional[int] | constr(max_length=0)
     client_width: Optional[int] | constr(max_length=0)
 
-    @validator('supported_video_codecs', 'supported_audio_codecs', pre=True, each_item=True)
+    @validator('supported_video_codecs', 'supported_audio_codecs', 'supported_hdr_formats', pre=True)
     def comma_string(cls, v):
         l = []
         for a in v:
             l.extend([s.strip() for s in a.split(',')])
         return l
+
+class Video_color(BaseModel):
+    range: str
+    range_type: str
 
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
@@ -63,6 +66,8 @@ class Transcoder:
         self.metadata = metadata
         self.video_stream = self.get_video_stream()
         self.input_codec = self.video_stream['codec_name']
+        self.video_color = get_video_color(self.video_stream)
+        self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
         self.output_codec_lib = None
         self.ffmpeg_args = None
         self.transcode_folder = None
@@ -207,10 +212,9 @@ class Transcoder:
                 self.ffmpeg_args.append({'-low_power': '1'})
             if self.settings.transcode_video_codec == 'hevc':
                 # Fails with "Error while filtering: Cannot allocate memory" if not added
-                self.ffmpeg_args.append({'-async_depth': '1'})
-        
+                self.ffmpeg_args.append({'-async_depth': '1'})        
 
-        vf = self.get_filter(width)
+        vf = self.get_video_filter(width)
         if vf:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
@@ -220,10 +224,10 @@ class Transcoder:
         if self.input_codec not in self.settings.supported_video_codecs:
             return False
         
-        if self.get_video_bit_depth() > self.settings.supported_video_bit_depth:
+        if self.video_color_bit_depth > self.settings.supported_video_color_bit_depth:
             return False
         
-        if self.has_hdr() and not self.settings.supports_hdr and config.ffmpeg_tonemap_enabled:
+        if self.video_color.range == 'hdr' and self.video_color.range_type not in self.settings.supported_hdr_formats and config.ffmpeg_tonemap_enabled:
             return False
 
         if self.settings.width and self.settings.width < self.video_stream['width']:
@@ -232,18 +236,16 @@ class Transcoder:
         return True
 
 
-    def get_filter(self, width: int):
-        vf = []
-        hdr = self.has_hdr()
-        
-        if self.get_video_bit_depth() <= self.settings.supported_video_bit_depth:
+    def get_video_filter(self, width: int):
+        vf = []        
+        if self.video_color_bit_depth <= self.settings.supported_video_color_bit_depth:
             pix_fmt = self.video_stream['pix_fmt']
         else:
-            pix_fmt = 'yuv420p' if self.settings.supported_video_bit_depth == 8 else 'yuv420p10le'
-            
-        tonemap = config.ffmpeg_tonemap_enabled and hdr and not self.settings.supports_hdr
+            pix_fmt = 'yuv420p' if self.settings.supported_video_color_bit_depth == 8 else 'yuv420p10le'
+        
+        tonemap = self.video_color.range_type not in self.settings.supported_hdr_formats and self.can_tonemap()
 
-        if tonemap or (hdr and self.settings.supports_hdr):
+        if tonemap or (self.video_color.range == 'hdr' and self.video_color.range_type in self.settings.supported_hdr_formats):
             vf.append('setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc')
         else:            
             vf.append('setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709')
@@ -258,38 +260,59 @@ class Transcoder:
         if pix_fmt == 'yuv420p10le':
             if self.output_codec_lib == 'h264_qsv':
                 pix_fmt = 'yuv420p'
-
-        if pix_fmt == 'yuv420p10le':
-            format_ = 'p010le'
-        else:            
-            format_ = 'nv12'
+        
+        format_ = ''
+        if not tonemap:
+            if pix_fmt == 'yuv420p10le':
+                format_ = 'format=p010le'
+            else:            
+                format_ = 'format=nv12'
             
+        width_filter = f'w={width}:h=-2' if width != self.video_stream['width'] else ''
+        if width_filter and format_:
+            format_ = ':' + format_
+
+        if width_filter or pix_fmt != self.video_stream['pix_fmt']:            
+            if config.ffmpeg_hwaccel == 'qsv':
+                vf.append(f'scale_vaapi={width_filter}{format_}')
+            else:                
+                vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}{format_}')
+            if not tonemap:
+                vf.append(f'hwmap=derive_device={config.ffmpeg_hwaccel},format={config.ffmpeg_hwaccel}')
+
         if tonemap:
-            if config.ffmpeg_hwaccel in ('qsv', 'vaapi'): # SDR
-                vf.append('tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709')
-                # Brightness: b=0 - Contrast: c=1.2
-                vf.append('procamp_vaapi=b=0:c=1.2:extra_hw_frames=16')
-
-        width_filter = f'w={width}:h=-2:' if width != self.video_stream['width'] else ''
-
-        if config.ffmpeg_hwaccel == 'qsv':
-            if width_filter or pix_fmt != self.video_stream['pix_fmt']:
-                vf.append(f'scale_vaapi={width_filter}format={format_}')
-            vf.append('hwmap=derive_device=qsv,format=qsv')
-
-        else:
-            if width_filter or pix_fmt != self.video_stream['pix_fmt']:
-                vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}format={format_}')
+            vf.extend(self.get_tonemap_hardware_filter())
 
         return vf
 
 
-    def get_video_bit_depth(self):
-        return get_video_bit_depth(self.video_stream)
+    def get_tonemap_hardware_filter(self):
+        if config.ffmpeg_hwaccel in ('qsv', 'vaapi'):
+            qsv_extra = ':extra_hw_frames=16' if config.ffmpeg_hwaccel == 'qsv' else ''
+            if self.video_color.range_type == 'hdr10':
+                return [
+                    'tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709',
+                    f'procamp_vaapi=b=0:c=1.2{qsv_extra}',
+                    f'hwmap=derive_device={config.ffmpeg_hwaccel}',
+                    f'format={config.ffmpeg_hwaccel}',
+                ]
+            if self.video_color.range_type == 'dovi':
+                return [
+                    'hwmap=derive_device=opencl',
+                    'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=bt2390:peak=100:desat=0',
+                    f'hwmap=derive_device={config.ffmpeg_hwaccel}:reverse=1{qsv_extra}',
+                    f'format={config.ffmpeg_hwaccel}',
+                ]
+        return []
 
-
-    def has_hdr(self):
-        return has_hdr(self.video_stream)
+    def can_tonemap(self):
+        if self.video_color_bit_depth != 10 or not config.ffmpeg_tonemap_enabled:
+            return False
+        
+        if self.input_codec == 'hevc' and self.video_color.range == 'hdr' and self.video_color.range_type == 'dovi':
+            return not config.ffmpeg_hwaccel_enabled or config.ffmpeg_hwaccel in ('qsv', 'vaapi')
+        
+        return self.video_color.range == 'hdr' and (self.video_color.range_type in ('hdr10', 'hlg'))
 
 
     def get_quality_params(self, width: int, codec: str):
@@ -488,13 +511,26 @@ def get_video_stream(metadata: dict):
         raise Exception('No video stream')
     
 
-def has_hdr(source: dict):
-    return source['pix_fmt'] == 'yuv420p10le' and \
-            source.get('color_primaries') == 'bt2020' and \
-            source.get('color_transfer') == 'smpte2084'
+def get_video_color(source: dict):
+    if source.get('color_transfer') == 'smpte2084' and source.get('color_primaries') == 'bt2020':
+        return Video_color(range='hdr', range_type='hdr10')
+    
+    if source.get('color_transfer') == 'arib-std-b67':
+        return Video_color(range='hdr', range_type='hlg')
+    
+    if source.get('codec_tag_string') in ('dovi', 'dvh1', 'dvhe', 'dav1'):
+        return Video_color(range='hdr', range_type='dovi')
+    
+    if source.get('side_data_list'):
+        for s in source['side_data_list']:
+            if s.get('dv_profile') in (5, 7, 8) and \
+                s.get('rpu_present_flag') and s.get('bl_present_flag') and s.get('dv_bl_signal_compatibility_id') in (0, 1, 4):
+                return Video_color(range='hdr', range_type='dovi')    
+
+    return Video_color(range='sdr', range_type='sdr')
 
 
-def get_video_bit_depth(source: dict):
+def get_video_color_bit_depth(source: dict):
     pix_fmt = source['pix_fmt']
     if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
         return 10

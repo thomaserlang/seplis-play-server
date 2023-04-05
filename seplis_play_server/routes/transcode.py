@@ -12,8 +12,8 @@ router = APIRouter()
 @router.get('/files/{session}/transcode')
 async def start_transcode(
     source_index: int, 
-    metadata = Depends(get_metadata), 
     settings: Transcode_settings = Depends(),
+    metadata = Depends(get_metadata), 
 ):
     if not metadata:
         raise HTTPException(404, 'No metadata')
