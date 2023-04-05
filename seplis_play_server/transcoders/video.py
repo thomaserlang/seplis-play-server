@@ -387,6 +387,7 @@ class Transcoder:
         ])
 
     def can_copy_audio(self, stream: dict):
+        return False
         if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
             return False
             
