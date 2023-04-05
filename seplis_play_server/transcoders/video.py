@@ -387,8 +387,7 @@ class Transcoder:
         ])
 
     def can_copy_audio(self, stream: dict):
-        return False # Audio goes out of sync for some reason when using audio copy
-        if self.settings.audio_channels and self.settings.audio_channels != stream['channels']:
+        if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
             return False
             
         if stream['codec_name'] not in self.settings.supported_audio_codecs:
