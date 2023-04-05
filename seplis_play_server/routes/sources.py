@@ -78,16 +78,8 @@ def resolution_text(width: int, height: int):
         return '240p'
     elif width <= 640 and height <= 360:
         return '360p'
-    elif width <= 682 and height <= 384:
-        return '384p'
-    elif width <= 720 and height <= 404:
-        return '404p'
     elif width <= 854 and height <= 480:
         return '480p'
-    elif width <= 960 and height <= 544:
-        return '540p'
-    elif width <= 1024 and height <= 576:
-        return '576p'
     elif width <= 1280 and height <= 962:
         return '720p'
     elif width <= 1920 and height <= 1200:
