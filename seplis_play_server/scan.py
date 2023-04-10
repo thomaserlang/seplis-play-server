@@ -43,22 +43,21 @@ async def cleanup_episodes():
     episodes: list[schemas.Play_server_episode_create] = []
     async with database.session() as session:
         deleted_count = 0
-        rows = await session.stream(sa.select(models.Episode))
-        async for db_episodes in rows.yield_per(1000):
-            for e in db_episodes:
-                if os.path.exists(e.path):
-                    episodes.append(schemas.Play_server_episode_create(
-                        series_id=e.series_id,
-                        episode_number=e.number,
-                        created_at=e.modified_time or datetime.now(tz=timezone.utc)
-                    ))
-                    continue
-                deleted_count += 1
-                await session.execute(sa.delete(models.Episode).where(
-                    models.Episode.series_id == e.series_id,
-                    models.Episode.number == e.number,
-                    models.Episode.path == e.path,
+        rows = await session.scalars(sa.select(models.Episode))
+        for e in rows:
+            if os.path.exists(e.path):
+                episodes.append(schemas.Play_server_episode_create(
+                    series_id=e.series_id,
+                    episode_number=e.number,
+                    created_at=e.modified_time or datetime.now(tz=timezone.utc)
                 ))
+                continue
+            deleted_count += 1
+            await session.execute(sa.delete(models.Episode).where(
+                models.Episode.series_id == e.series_id,
+                models.Episode.number == e.number,
+                models.Episode.path == e.path,
+            ))
         await session.commit()
         logger.info(f'{deleted_count} episodes was deleted from the database')
 
@@ -82,21 +81,20 @@ async def cleanup_episodes():
 async def cleanup_movies():
     movies: list[schemas.Play_server_movie_create] = []
     async with database.session() as session:
-        result = await session.stream(sa.select(models.Movie))
+        rows = await session.scalars(sa.select(models.Movie))
         deleted_count = 0
-        async for db_movies in result.yield_per(1000):
-            for m in db_movies:
-                if os.path.exists(m.path):
-                    movies.append(schemas.Play_server_movie_create(
-                        movie_id=m.movie_id,
-                        created_at=m.modified_time or datetime.now(tz=timezone.utc)
-                    ))
-                    continue
-                deleted_count += 1
-                await session.execute(sa.delete(models.Movie).where(
-                    models.Movie.movie_id == m.movie_id,
-                    models.Movie.path == m.path,
+        for m in rows:
+            if os.path.exists(m.path):
+                movies.append(schemas.Play_server_movie_create(
+                    movie_id=m.movie_id,
+                    created_at=m.modified_time or datetime.now(tz=timezone.utc)
                 ))
+                continue
+            deleted_count += 1
+            await session.execute(sa.delete(models.Movie).where(
+                models.Movie.movie_id == m.movie_id,
+                models.Movie.path == m.path,
+            ))
         await session.commit()
         logger.info(f'{deleted_count} movies was deleted from the database')
 
