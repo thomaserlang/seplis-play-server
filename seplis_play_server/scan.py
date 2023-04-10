@@ -45,7 +45,7 @@ async def cleanup_episodes():
         deleted_count = 0
         logger.info('Getting episodes')
         rows = await session.scalars(sa.select(models.Episode))
-        logger.info(f'Found {rows} episodes')
+        logger.info(f'Found {len(rows)} episodes')
         for e in rows:
             logger.info(f'Checking {e.path}')
             if os.path.exists(e.path):
