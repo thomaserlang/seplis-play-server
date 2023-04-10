@@ -43,8 +43,11 @@ async def cleanup_episodes():
     episodes: list[schemas.Play_server_episode_create] = []
     async with database.session() as session:
         deleted_count = 0
+        logger.info('Getting episodes')
         rows = await session.scalars(sa.select(models.Episode))
+        logger.info(f'Found {rows} episodes')
         for e in rows:
+            logger.info(f'Checking {e.path}')
             if os.path.exists(e.path):
                 episodes.append(schemas.Play_server_episode_create(
                     series_id=e.series_id,
