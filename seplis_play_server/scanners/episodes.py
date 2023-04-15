@@ -35,22 +35,22 @@ class Episode_scan(Play_scan):
         return self.regex_parse_file_name(filename)
 
 
-    async def episode_series_id_lookup(self, episode):
-        if episode.file_title in self.not_found_series:
+    async def episode_series_id_lookup(self, episode: schemas.Parsed_file_episode):
+        if episode.title in self.not_found_series:
             return False
-        logger.debug(f'Looking for a series with title: "{episode.file_title}"')
-        series_id = await self.series_id.lookup(episode.file_title)
+        logger.debug(f'Looking for a series with title: "{episode.title}"')
+        series_id = await self.series_id.lookup(episode.title)
         if series_id:
-            logger.debug(f'[series-{series_id}] Found: "{episode.file_title}"')
+            logger.debug(f'[series-{series_id}] Found: "{episode.title}"')
             episode.series_id = series_id
             return True
         else:
-            self.not_found_series.append(episode.file_title)
-            logger.info(f'No series found for title: "{episode.file_title}"')
+            self.not_found_series.append(episode.title)
+            logger.info(f'No series found for title: "{episode.title}"')
         return False
 
 
-    async def episode_number_lookup(self, episode):
+    async def episode_number_lookup(self, episode: schemas.Parsed_file_episode):
         '''
         Tries to lookup the episode number of the episode.
         Sets the number in the episode object if successful.
@@ -276,7 +276,7 @@ class Series_id_lookup(object):
     def __init__(self, scanner):
         self.scanner = scanner
 
-    async def lookup(self, file_title):
+    async def lookup(self, file_title: str):
         '''
         Tries to find the series on SEPLIS by it's title.
 
@@ -300,12 +300,7 @@ class Series_id_lookup(object):
             await session.commit()
         return series_id
 
-    async def db_lookup(self, file_title):        
-        '''
-
-        :param file_title: str
-        :returns: int
-        '''
+    async def db_lookup(self, file_title: str):
         async with database.session() as session:
             series = await session.scalar(sa.select(models.Series_id_lookup).where(
                 models.Series_id_lookup.file_title == file_title,
@@ -314,7 +309,7 @@ class Series_id_lookup(object):
                 return
             return series.series_id
 
-    async def web_lookup(self, file_title):
+    async def web_lookup(self, file_title: str):
         r = await client.get('/2/search', params={
             'title': file_title,
             'type': 'series',
