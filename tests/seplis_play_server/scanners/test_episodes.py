@@ -3,7 +3,7 @@ import httpx
 import respx
 import sqlalchemy as sa
 from unittest import mock
-from datetime import datetime
+from datetime import date, datetime
 from seplis_play_server.testbase import run_file, play_db_test
 from seplis_play_server.database import Database
 from seplis_play_server import models, schemas
@@ -81,34 +81,31 @@ async def test_series_id_lookup(play_db_test: Database):
 @pytest.mark.asyncio
 async def test_save_item(play_db_test: Database):
     from seplis_play_server.scanners import Episode_scan
-    from seplis_play_server.scanners.episodes import (
-        Episode_scan, 
-        Parsed_episode_season, 
-        Parsed_episode_air_date, Parsed_episode_number,
-    )
+    from seplis_play_server.scanners.episodes import Episode_scan
+    from seplis_play_server.schemas import Parsed_file_episode
     scanner = Episode_scan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
     scanner.get_file_modified_time = mock.MagicMock(return_value=datetime(2014, 11, 14, 21, 25, 58))
     scanner.get_metadata = mock.AsyncMock(return_value={
         'some': 'data',
     })
     episodes = []
-    episodes.append((Parsed_episode_season(
+    episodes.append((Parsed_file_episode(
         series_id=1,
-        file_title='ncis',
+        title='ncis',
         season=1,
         episode=2,
-        number=2,
+        episode_number=2,
     ), '/ncis/ncis.s01e02.mp4'))
-    episodes.append((Parsed_episode_air_date(
+    episodes.append((Parsed_file_episode(
         series_id=1,
-        file_title='ncis',
+        title='ncis',
         air_date='2014-11-14',
-        number=3,
+        episode_number=3,
     ), '/ncis/ncis.2014-11-14.mp4'))
-    episodes.append((Parsed_episode_number(
+    episodes.append((Parsed_file_episode(
         series_id=1,
-        file_title='ncis',
-        number=4,
+        title='ncis',
+        episode_number=4,
     ), '/ncis/ncis.4.mp4'))
     # episodes saved
     for episode in episodes:
@@ -157,11 +154,7 @@ async def test_save_item(play_db_test: Database):
 @respx.mock
 async def test_episode_number_lookup(play_db_test: Database):
     from seplis_play_server.scanners import Episode_scan
-    from seplis_play_server.scanners.episodes import (
-        Episode_scan, 
-        Parsed_episode_season, 
-        Parsed_episode_air_date, Parsed_episode_number,
-    )
+    from seplis_play_server.scanners.episodes import Episode_scan
     scanner = Episode_scan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
 
     # test parsed episode season
@@ -171,9 +164,9 @@ async def test_episode_number_lookup(play_db_test: Database):
                 items=[schemas.Episode(number=2)]
             ).dict())
     )
-    episode = Parsed_episode_season(
+    episode = schemas.Parsed_file_episode(
         series_id=1,
-        file_title='NCIS',
+        title='NCIS',
         season=1,
         episode=2,
     )
@@ -189,10 +182,10 @@ async def test_episode_number_lookup(play_db_test: Database):
                 items=[schemas.Episode(number=3)]
             ).dict())
     )
-    episode = Parsed_episode_air_date(
+    episode = schemas.Parsed_file_episode(
         series_id=1,
-        file_title='NCIS',
-        air_date='2014-11-14',
+        title='NCIS',
+        date=date(2014, 11, 14),
     )
     assert None == await scanner.episode_number.db_lookup(episode)
     assert 3 == await scanner.episode_number.lookup(episode)
@@ -200,10 +193,10 @@ async def test_episode_number_lookup(play_db_test: Database):
     
 
     # test parsed episode number
-    episode = Parsed_episode_number(
+    episode = schemas.Parsed_file_episode(
         series_id=1,
-        file_title='NCIS',
-        number=4,
+        title='NCIS',
+        episode_number=4,
     )
     assert await scanner.episode_number_lookup(episode)
     # there is no reason to have a lookup record for an
@@ -216,55 +209,52 @@ async def test_episode_number_lookup(play_db_test: Database):
 @pytest.mark.asyncio
 async def test_parse_episodes(play_db_test: Database):
     from seplis_play_server.scanners import Episode_scan
-    from seplis_play_server.scanners.episodes import (
-        Episode_scan, 
-        Parsed_episode_season, 
-        Parsed_episode_air_date, Parsed_episode_number,
-    )
+    from seplis_play_server.scanners.episodes import Episode_scan
+    from seplis_play_server.schemas import Parsed_file_episode
     scanner = Episode_scan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
     
     # Normal
     path = '/Alpha House/Alpha.House.S02E01.The.Love.Doctor.720p.AI.WEBRip.DD5.1.x264-NTb.mkv'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_season)
-    assert info.file_title == 'alpha.house'
+    assert info.title == 'alpha.house'
     assert info.season == 2
     assert info.episode == 1
 
     # Anime
     path = '/Naruto/[HorribleSubs] Naruto Shippuuden - 379 [1080p].mkv'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_number)
-
-    assert info.file_title == 'naruto shippuuden'
-    assert info.number, 379
+    assert info.title == 'naruto shippuuden'
+    assert info.episode_number == 379
 
     path = '/Naruto Shippuuden/Naruto Shippuuden.426.720p.mkv'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_number)
-    assert info.file_title, 'naruto shippuuden'
-    assert info.number, 426
+    assert info.title, 'naruto shippuuden'
+    assert info.episode_number == 426
 
     # Air date
     path = '/The Daily series/The.Daily.series.2014.06.03.Ricky.Gervais.HDTV.x264-D0NK.mp4'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_air_date)
-    assert info.file_title, 'the.daily.series'
-    assert info.air_date, '2014-06-03'
+    assert info.title, 'the.daily.series'
+    assert info.date.strftime('%Y-%m-%d') == '2014-06-03'
 
     # Double episode
     path = 'Star Wars Resistance.S01E01-E02.720p webdl h264 aac.mkv'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_season)
-    assert info.file_title, 'star wars resistance'
-    assert info.season, 1
-    assert info.episode, 1
+    assert info.title == 'star wars resistance'
+    assert info.season == 1
+    assert info.episode == 1
     
-    path = 'Boruto Naruto Next Generations (2017).6.1080p h265.mkv'
+    path = 'Boruto Naruto Next Generations (2017) - 6.1080p h265.mkv'
     info = scanner.parse(path)
-    assert isinstance(info, Parsed_episode_number)
-    assert info.file_title, 'boruto naruto next generations (2017)'
-    assert info.number, 6
+    assert info.title == 'boruto naruto next generations (2017)'
+    assert info.episode_number == 6
+    
+    path = 'Vinland Saga (2019) - S01E01 - 005 - [HDTV-1080p][8bit][h264][AAC 2.0].mkv'
+    info = scanner.parse(path)
+    assert info.season == 1
+    assert info.episode == 1
+    assert info.episode_number == 5
+    assert info.title == 'vinland saga (2019)'
 
 
 if __name__ == '__main__':

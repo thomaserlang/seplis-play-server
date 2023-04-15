@@ -1,7 +1,8 @@
 import asyncio
 import os.path, re
 import sqlalchemy as sa
-from datetime import datetime, timezone
+from guessit import guessit
+from datetime import date, datetime, timezone
 from seplis_play_server import constants, models, config, utils, logger, schemas
 from seplis_play_server.client import client
 from seplis_play_server.database import database
@@ -17,8 +18,8 @@ class Episode_scan(Play_scan):
             make_thumbnails=make_thumbnails,
             cleanup_mode=cleanup_mode,
         )
-        self.series_id = Series_id(scanner=self)
-        self.episode_number = Episode_number(scanner=self)
+        self.series_id = Series_id_lookup(scanner=self)
+        self.episode_number = Episode_number_lookup(scanner=self)
         self.not_found_series = []
 
 
@@ -26,28 +27,15 @@ class Episode_scan(Play_scan):
         logger.info(f'Scanning: {self.scan_path}')
         files = self.get_files()
         for f in files:
-            episode = self.parse(f)
-            if episode:
-                await self.save_item(episode, f)
+            parsed_episode = self.parse(f)
+            if parsed_episode:
+                await self.save_item(parsed_episode, f)
             else:
                 logger.debug(f'"{f}" didn\'t match any pattern')
 
 
     def parse(self, filename):
-        for pattern in constants.SERIES_FILENAME_PATTERNS:
-            try:
-                match = re.match(
-                    pattern, 
-                    os.path.basename(filename), 
-                    re.VERBOSE | re.IGNORECASE
-                )
-                if not match:
-                    continue
-                return self._parse_episode_info_from_file(match=match)
-            except re.error as error:
-                logger.exception(f'episode parse re error: {error}')
-            except:
-                logger.exception(f'episode parse pattern: {pattern}')
+        return self.regex_parse_file_name(filename)
 
 
     async def episode_series_id_lookup(self, episode):
@@ -80,7 +68,7 @@ class Episode_scan(Play_scan):
         '''
         if not episode.series_id:
             return
-        if isinstance(episode, Parsed_episode_number):
+        if episode.episode_number:
             return True
         value = self.episode_number.get_lookup_value(episode)
         logger.debug(f'[series-{episode.series_id}] Looking for episode {value}')
@@ -94,25 +82,21 @@ class Episode_scan(Play_scan):
         return False
 
 
-    async def save_item(self, item, path):
-        '''
-        :param episode: `Parsed_episode()`
-        :returns: bool
-        '''
+    async def save_item(self, item: schemas.Parsed_file_episode, path: str):
         async with database.session() as session:
             ep = await session.scalar(sa.select(models.Episode).where(
                 models.Episode.path == path,
             ))
             if ep:
                 item.series_id = ep.series_id
-                item.number = ep.number
+                item.episode_number = ep.number
             modified_time = self.get_file_modified_time(path)
             if not ep or (ep.modified_time != modified_time) or not ep.meta_data:
                 if not ep:
                     if not item.series_id:
                         if not await self.episode_series_id_lookup(item):
                             return False
-                    if not item.number:
+                    if not item.episode_number:
                         if not await self.episode_number_lookup(item):
                             return False
                 try:
@@ -128,7 +112,7 @@ class Episode_scan(Play_scan):
                     else:
                         sql = sa.insert(models.Episode).values({
                             models.Episode.series_id: item.series_id,
-                            models.Episode.number: item.number,
+                            models.Episode.number: item.episode_number,
                             models.Episode.path: path,
                             models.Episode.meta_data: metadata,
                             models.Episode.modified_time: modified_time,
@@ -138,17 +122,17 @@ class Episode_scan(Play_scan):
 
                     await self.add_to_index(
                         series_id=item.series_id, 
-                        episode_number=item.number,
+                        episode_number=item.episode_number,
                         created_at=modified_time,
                     )
 
-                    logger.info(f'[episode-{item.series_id}-{item.number}] Saved {path}')
+                    logger.info(f'[episode-{item.series_id}-{item.episode_number}] Saved {path}')
                 except Exception as e:
                     logger.error(str(e))
             else:                
-                logger.info(f'[episode-{item.series_id}-{item.number}] Nothing changed for {path}')
+                logger.info(f'[episode-{item.series_id}-{item.episode_number}] Nothing changed for {path}')
             if self.make_thumbnails:
-                asyncio.create_task(self.thumbnails(f'episode-{item.series_id}-{item.number}', path))
+                asyncio.create_task(self.thumbnails(f'episode-{item.series_id}-{item.episode_number}', path))
             return True
 
 
@@ -225,89 +209,77 @@ class Episode_scan(Play_scan):
             logger.info(f'[episode-{series_id}-{episode_number}] Removed from play server index')
 
 
-    def _parse_episode_info_from_file(self, match):
-        fields = match.groupdict().keys()
-        season = None
-        if 'file_title' not in fields:
-            return None
-        file_title = match.group('file_title').strip().lower()
+    def regex_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode: 
+        result = schemas.Parsed_file_episode()       
+        logger.info('-----')
+        for i, pattern in enumerate(constants.SERIES_FILENAME_PATTERNS):
+            try:
+                match = re.match(
+                    pattern, 
+                    os.path.basename(filename), 
+                    re.VERBOSE | re.IGNORECASE
+                )
+                if not match:
+                    continue
+                logger.info(f'Matched pattern: {i} {pattern}')
 
-        season = None
-        if 'season' in fields:
-            season = int(match.group('season'))
+                fields = match.groupdict().keys()
+                if 'file_title' not in fields:
+                    continue
+                
+                if not result.title:
+                    result.title = match.group('file_title').strip().lower()
 
-        number = None
-        if 'number' in fields:
-            number = match.group('number')
-        elif 'number1' in fields:
-            number = match.group('number1')
-        elif 'numberstart' in fields:
-            number = match.group('numberstart')
-        if number:
-            number = int(number)
+                if 'season' in fields and not result.season:
+                    result.season = int(match.group('season'))
+                if 'episode' in fields and not result.season:
+                    result.episode = int(match.group('episode'))
 
-        air_date = None
-        if 'year' in fields and 'month' in fields and 'day' in fields:
-            air_date = '{}-{}-{}'.format(
-                match.group('year'),
-                match.group('month'),
-                match.group('day'),
-            )
+                number = None
+                if 'episode' in fields:
+                    number = match.group('episode')
+                elif 'episode_start' in fields:
+                    number = match.group('episode_start')
+                if number and not result.episode:
+                    if not result.season:
+                        if not result.episode_number:
+                            result.episode_number = int(number)
+                    else:
+                        result.episode = int(number)
 
-        if season and number:
-            return Parsed_episode_season(
-                file_title=file_title,
-                season=season,
-                episode=number,
-            )
-        elif not season and number:
-            return Parsed_episode_number(
-                file_title=file_title,
-                number=number,
-            )
-        elif air_date:
-            return Parsed_episode_air_date(
-                file_title=file_title,
-                air_date=air_date,
-            )
+                if 'absolute_number' in fields and not result.episode_number:
+                    result.episode_number = int(match.group('absolute_number'))
 
-class Parsed_episode(object):
+                if 'year' in fields and 'month' in fields and 'day' in fields and not result.date:
+                    result.date = date(int(match.group('year')), int(match.group('month')), int(match.group('day')))
+                
+            except re.error as error:
+                logger.exception(f'episode parse re error: {error}')
+            except:
+                logger.exception(f'episode parse pattern: {pattern}')
 
-    def __init__(self):
-        self.lookup_type = 0
-        self.series_id = None
-        self.number = None
+        return result if result.title else None
 
-class Parsed_episode_season(Parsed_episode):
+    def guessit_parse(self, filename: str) -> schemas.Parsed_file_episode:
+        d = guessit(filename, '-t series --episode --episode-prefer-number')
+        if d and d.get('title'):
+            result = schemas.Parsed_file_episode()
+            result.title = d['title'].strip().lower()
+            if d.get('season'):
+                result.season = d['season']
+            if d.get('episode'):
+                result.episode = d['episode']
+            if d.get('episode_number'):
+                result.episode_number = d['episode']
+            if d.get('date'):
+                result.date = d['date']
+            return result
+        else:
+            logger.info(f'{filename} doesn\'t look like an episode')
 
-    def __init__(self, file_title, season, episode, series_id=None, number=None):
-        super().__init__()
-        self.lookup_type = 1
-        self.file_title = file_title
-        self.season = season
-        self.episode = episode
-        self.series_id = series_id
-        self.number = number
 
-class Parsed_episode_air_date(Parsed_episode):
 
-    def __init__(self, file_title, air_date, series_id=None, number=None):
-        super().__init__()
-        self.lookup_type = 2
-        self.file_title = file_title
-        self.air_date = air_date
-        self.series_id = series_id
-        self.number = number
-
-class Parsed_episode_number(Parsed_episode):
-
-    def __init__(self, file_title, number, series_id=None):
-        super().__init__()
-        self.file_title = file_title
-        self.number = number
-        self.series_id = series_id
-
-class Series_id(object):
+class Series_id_lookup(object):
     '''Used to lookup a series id by it's title.
     The result will be cached in the local db.
     '''
@@ -361,7 +333,7 @@ class Series_id(object):
         r.raise_for_status()
         return r.json()
 
-class Episode_number(object):
+class Episode_number_lookup(object):
     '''Used to lookup an episode's number from the season and episode or
     an air date.
     Stores the result in the local db.
@@ -370,11 +342,11 @@ class Episode_number(object):
     def __init__(self, scanner):
         self.scanner = scanner
 
-    async def lookup(self, episode):
+    async def lookup(self, episode: schemas.Parsed_file_episode):
         if not episode.series_id:
             raise Exception('series_id must be defined in the episode object')
-        if isinstance(episode, Parsed_episode_number):
-            return episode.number
+        if episode.episode_number:
+            return episode.episode_number
         number = await self.db_lookup(episode)
         if number:
             return number
@@ -384,7 +356,7 @@ class Episode_number(object):
         async with database.session() as session:
             await session.execute(sa.insert(models.Episode_number_lookup).values(
                 series_id=episode.series_id,
-                lookup_type=episode.lookup_type,
+                lookup_type=1,
                 lookup_value=self.get_lookup_value(episode),
                 number=number,
             ))
@@ -396,7 +368,7 @@ class Episode_number(object):
             value = self.get_lookup_value(episode)
             e = await session.scalar(sa.select(models.Episode_number_lookup.number).where(
                 models.Episode_number_lookup.series_id == episode.series_id,
-                models.Episode_number_lookup.lookup_type == episode.lookup_type,
+                models.Episode_number_lookup.lookup_type == 1,
                 models.Episode_number_lookup.lookup_value == value,
             ))
             if not e:
@@ -404,17 +376,12 @@ class Episode_number(object):
             return e
 
     @staticmethod
-    def get_lookup_value(episode):
+    def get_lookup_value(episode: schemas.Parsed_file_episode):
         value = None
-        if isinstance(episode, Parsed_episode_season):
-            value = '{}-{}'.format(
-                episode.season,
-                episode.episode,
-            )
-        elif isinstance(episode, Parsed_episode_air_date):
-            value = '{}'.format(
-                episode.air_date,
-            )
+        if episode.season and episode.episode:
+            value = f'{episode.season}-{episode.episode}'
+        elif episode.date:
+            value = episode.date.strftime('%Y-%m-%d')
         else:
             raise Exception('''
                 Unknown parsed episode object. 
@@ -425,14 +392,14 @@ class Episode_number(object):
 
     async def web_lookup(self, episode):
         params = {}
-        if isinstance(episode, Parsed_episode_season):
+        if episode.season and episode.episode:
             params = {
                 'season': episode.season,
                 'episode': episode.episode,
             }
-        elif isinstance(episode, Parsed_episode_air_date):
+        elif episode.date:
             params = {
-                'air_date': episode.air_date,
+                'air_date': episode.date.strftime('%Y-%m-%d'),
             }
         else:
             raise Exception('Unknown parsed episode object')

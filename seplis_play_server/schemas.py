@@ -23,7 +23,7 @@ class Page_cursor_result(GenericModel, Generic[T]):
     cursor: str | None = None
 
 
-class Episode(BaseModel):
+class Episode(BaseModel, orm_mode=True):
     title: str | None
     original_title: str | None
     number: int
@@ -35,5 +35,11 @@ class Episode(BaseModel):
     runtime: int | None
     rating: float | None
 
-    class Config:
-        orm_mode = True
+
+class Parsed_file_episode(BaseModel):
+    series_id: int | None
+    episode_number: int | None
+    season: int | None
+    episode: int | None
+    date: date | None
+    title: str | None
