@@ -4,13 +4,13 @@ from seplis_play_server import config, utils, logger
 
 class Play_scan:
 
-    def __init__(self, scan_path: str, type_: str, make_thumbnails: bool = False, cleanup_mode = False):
+    def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False, parser = 'internal'):
         if not os.path.exists(scan_path):
             raise Exception(f'scan_path "{scan_path}" does not exist')
         self.scan_path = scan_path
-        self.type = type_
         self.make_thumbnails = make_thumbnails
         self.cleanup_mode = cleanup_mode
+        self.parser = parser
 
 
     async def save_item(self, item, path):

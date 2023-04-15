@@ -50,7 +50,8 @@ async def test_movie_parse():
     from seplis_play_server.scanners import Movie_scan
     scanner = Movie_scan('/')
     assert scanner.parse('Uncharted (2160p BluRay x265 10bit HDR Tigole).mkv') == 'Uncharted'
-    assert scanner.parse('Parasite.2019.REPACK.2160p.4K.BluRay.x265.10bit.AAC7.1-[YTS.MX].mkv') == 'Parasite 2019'
+    assert scanner.parse('Parasite.2019.REPACK.2160p.4K.BluRay.x265.10bit.AAC7.1-[YTS.MX].mkv') == 'Parasite (2019)'
+    assert scanner.parse('F9 (2021) [Bluray-1080p][AAC 5.1][x264].mkv') == 'F9 (2021)'
 
 
 if __name__ == '__main__':

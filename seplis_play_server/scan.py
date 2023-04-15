@@ -17,12 +17,14 @@ async def scan(disable_cleanup=False, disable_thumbnails=False):
                 scan_path=s.path, 
                 make_thumbnails=s.make_thumbnails and not disable_thumbnails,
                 cleanup_mode=not disable_cleanup,
+                parser=s.parser,
             )
         elif s.type == 'movies':
             scanner = Movie_scan(
                 scan_path=s.path, 
                 make_thumbnails=s.make_thumbnails and not disable_thumbnails,
-                cleanup_mode=not disable_cleanup,    
+                cleanup_mode=not disable_cleanup,
+                parser=s.parser, 
             )
         if scanner:
             await scanner.scan()

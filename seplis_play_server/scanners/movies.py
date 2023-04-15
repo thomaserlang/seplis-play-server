@@ -10,34 +10,29 @@ from .base import Play_scan
 
 class Movie_scan(Play_scan):
 
-    def __init__(self, scan_path, make_thumbnails: bool = False, cleanup_mode = False):
-        super().__init__(
-            scan_path=scan_path,
-            type_='movies',
-            make_thumbnails=make_thumbnails,
-            cleanup_mode=cleanup_mode,
-        )
-
-
     async def scan(self):
         logger.info(f'Scanning: {self.scan_path}')
         files = self.get_files()
         for f in files:
             title = self.parse(f)
             if title:
-                await self.save_item(title, f)  
+                await self.save_item(title, f)
             else:
                 logger.debug(f'"{f}" didn\'t match any pattern')
 
 
     def parse(self, filename):
-        d = guessit(filename, '-t movie')
+        d = guessit(filename, {
+            'type': 'movie',
+            'excludes': ['country', 'language', 'film'],
+        })
+        logger.info(d)
         if d and d.get('title'):
             t = d['title']
             if d.get('part'):
                 t += f' Part {d["part"]}'
             if d.get('year'):
-                t += f" {d['year']}"
+                t += f" ({d['year']})"
             return t        
         logger.info(f'{filename} doesn\'t look like a movie')
 

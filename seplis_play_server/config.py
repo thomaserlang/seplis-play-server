@@ -15,6 +15,7 @@ class ConfigPlayScanModel(BaseModel):
     type: Literal['series', 'movies']
     path: pathlib.Path
     make_thumbnails: bool = False
+    parser: Literal['internal', 'guessit'] = 'internal'
 
     
 class ConfigModel(BaseSettings):
@@ -23,7 +24,7 @@ class ConfigModel(BaseSettings):
     database: str
     secret: str
     scan: list[ConfigPlayScanModel]
-    media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg']
+    media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg', 'm4v']
     
     ffmpeg_folder: pathlib.Path = '/bin'
     ffmpeg_loglevel = '40'

@@ -8,7 +8,18 @@ from seplis_play_server import config, logger
 async def main():
     scanners: dict[str, scan.Play_scan] = {}
     for scan in config.scan:
-        scanners[scan.path] = get_scanner(type_=scan.type, scan_path=scan.path, make_thumbnails=scan.make_thumbnails)
+        if scan.type == 'series':
+            scanners[scan.path] = Episode_scan(
+                scan_path=scan.path, 
+                make_thumbnails=scan.make_thumbnails,
+                parser=scan.parser,
+            )
+        elif scan.type == 'movies':
+            scanners[scan.path] = Movie_scan(
+                scan_path=scan.path, 
+                make_thumbnails=scan.make_thumbnails,
+                parser=scan.parser, 
+            )
     waiting = {}
     async for changes in awatch(*[str(scan.path) for scan in config.scan]):
         scanner: scan.Play_scan = None
@@ -28,13 +39,6 @@ async def main():
                 changed=changed, 
                 waiting=waiting
             ))
-
-
-def get_scanner(type_: str, scan_path: str, make_thumbnails: bool) -> Play_scan:
-    if type_ == 'series':
-        return Episode_scan(scan_path=scan_path, make_thumbnails=make_thumbnails)
-    elif type_ == 'movies':
-        return Movie_scan(scan_path=scan_path, make_thumbnails=make_thumbnails)
 
 
 async def parse(scanner: Play_scan, path: str, changed: Change, waiting: dict):

@@ -210,7 +210,6 @@ async def test_episode_number_lookup(play_db_test: Database):
 async def test_parse_episodes(play_db_test: Database):
     from seplis_play_server.scanners import Episode_scan
     from seplis_play_server.scanners.episodes import Episode_scan
-    from seplis_play_server.schemas import Parsed_file_episode
     scanner = Episode_scan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
     
     # Normal
@@ -255,6 +254,22 @@ async def test_parse_episodes(play_db_test: Database):
     assert info.episode == 1
     assert info.episode_number == 5
     assert info.title == 'vinland saga (2019)'
+
+
+    path = 'Vinland Saga (2019) - S01E01 - 005 - [HDTV-1080p][8bit][h264][AAC 2.0].mkv'
+    scanner.parser = 'guessit'
+    info = scanner.parse(path)
+    assert info.season == 1
+    assert info.episode == 1
+    assert info.title == 'vinland saga (2019)'
+
+    
+    path = 'the last of us - S01E02.mkv'
+    scanner.parser = 'guessit'
+    info = scanner.parse(path)
+    assert info.season == 1
+    assert info.episode == 2
+    assert info.title == 'the last of us'
 
 
 if __name__ == '__main__':

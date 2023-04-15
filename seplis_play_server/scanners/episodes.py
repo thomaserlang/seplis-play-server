@@ -11,13 +11,8 @@ from .base import Play_scan
 
 class Episode_scan(Play_scan):
 
-    def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False):
-        super().__init__(
-            scan_path=scan_path,
-            type_='series',
-            make_thumbnails=make_thumbnails,
-            cleanup_mode=cleanup_mode,
-        )
+    def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False, parser = 'internal'):
+        super().__init__(scan_path, make_thumbnails, cleanup_mode, parser)
         self.series_id = Series_id_lookup(scanner=self)
         self.episode_number = Episode_number_lookup(scanner=self)
         self.not_found_series = []
@@ -35,15 +30,12 @@ class Episode_scan(Play_scan):
 
 
     def parse(self, filename):
+        if self.parser == 'guessit':
+            return self.guessit_parse_file_name(filename)
         return self.regex_parse_file_name(filename)
 
 
     async def episode_series_id_lookup(self, episode):
-        '''
-
-        :param episode: `Parsed_episode()`
-        :returns: bool
-        '''
         if episode.file_title in self.not_found_series:
             return False
         logger.debug(f'Looking for a series with title: "{episode.file_title}"')
@@ -62,9 +54,6 @@ class Episode_scan(Play_scan):
         '''
         Tries to lookup the episode number of the episode.
         Sets the number in the episode object if successful.
-
-        :param episode: `Parsed_episode()`
-        :returns: bool
         '''
         if not episode.series_id:
             return
@@ -161,11 +150,7 @@ class Episode_scan(Play_scan):
             logger.info(f'[episode-{series_id}-{episode_number}] Added to play server index ({config.server_id})')
 
 
-    async def delete_path(self, path):        
-        '''
-        :param episode: `Parsed_episode()`
-        :returns: bool
-        '''
+    async def delete_path(self, path):
         async with database.session() as session:
             episode = await session.scalar(sa.select(models.Episode).where(
                 models.Episode.path == path,
@@ -210,9 +195,8 @@ class Episode_scan(Play_scan):
 
 
     def regex_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode: 
-        result = schemas.Parsed_file_episode()       
-        logger.info('-----')
-        for i, pattern in enumerate(constants.SERIES_FILENAME_PATTERNS):
+        result = schemas.Parsed_file_episode()
+        for pattern in constants.SERIES_FILENAME_PATTERNS:
             try:
                 match = re.match(
                     pattern, 
@@ -221,7 +205,6 @@ class Episode_scan(Play_scan):
                 )
                 if not match:
                     continue
-                logger.info(f'Matched pattern: {i} {pattern}')
 
                 fields = match.groupdict().keys()
                 if 'file_title' not in fields:
@@ -260,11 +243,17 @@ class Episode_scan(Play_scan):
 
         return result if result.title else None
 
-    def guessit_parse(self, filename: str) -> schemas.Parsed_file_episode:
-        d = guessit(filename, '-t series --episode --episode-prefer-number')
+    def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
+        d = guessit(filename, {
+            'type': 'episode',
+            'episode_prefer_number': True,
+            'excludes': ['country', 'language'],
+        })
         if d and d.get('title'):
             result = schemas.Parsed_file_episode()
             result.title = d['title'].strip().lower()
+            if d.get('year'):
+                result.title += f' ({d["year"]})'
             if d.get('season'):
                 result.season = d['season']
             if d.get('episode'):
