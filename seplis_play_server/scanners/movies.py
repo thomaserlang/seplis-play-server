@@ -26,7 +26,6 @@ class Movie_scan(Play_scan):
             'type': 'movie',
             'excludes': ['country', 'language', 'film'],
         })
-        logger.info(d)
         if d and d.get('title'):
             t = d['title']
             if d.get('part'):
