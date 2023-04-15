@@ -64,7 +64,7 @@ class Episode_scan(Play_scan):
         number = await self.episode_number.lookup(episode)
         if number:                
             logger.debug(f'[episodes-{episode.series_id}-{number}] Found episode')
-            episode.number = number
+            episode.episode_number = number
             return True
         else:
             logger.info(f'[series-{episode.series_id}] No episode found for {value}')
