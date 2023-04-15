@@ -60,6 +60,8 @@ class Episode_scan(Play_scan):
         if episode.episode_number:
             return True
         value = self.episode_number.get_lookup_value(episode)
+        if not value:
+            return
         logger.debug(f'[series-{episode.series_id}] Looking for episode {value}')
         number = await self.episode_number.lookup(episode)
         if number:                
@@ -84,9 +86,11 @@ class Episode_scan(Play_scan):
                 if not ep:
                     if not item.series_id:
                         if not await self.episode_series_id_lookup(item):
+                            logger.info(f'No series found for file {path}')
                             return False
                     if not item.episode_number:
                         if not await self.episode_number_lookup(item):
+                            logger.info(f'No episode found for file {path}')
                             return False
                 try:
                     metadata = await self.get_metadata(path)
@@ -241,7 +245,8 @@ class Episode_scan(Play_scan):
             except:
                 logger.exception(f'episode parse pattern: {pattern}')
 
-        return result if result.title else None
+        return result if result.title and (result.episode_number or (result.season and result.episode)) else None
+
 
     def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
         d = guessit(filename, {
@@ -265,7 +270,6 @@ class Episode_scan(Play_scan):
             return result
         else:
             logger.info(f'{filename} doesn\'t look like an episode')
-
 
 
 class Series_id_lookup(object):
@@ -366,12 +370,6 @@ class Episode_number_lookup(object):
             value = f'{episode.season}-{episode.episode}'
         elif episode.date:
             value = episode.date.strftime('%Y-%m-%d')
-        else:
-            raise Exception('''
-                Unknown parsed episode object. 
-                If the episode already contains a number there is no need 
-                to use this method.
-            ''')
         return value
 
     async def web_lookup(self, episode):

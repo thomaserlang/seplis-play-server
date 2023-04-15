@@ -199,10 +199,6 @@ async def test_episode_number_lookup(play_db_test: Database):
         episode_number=4,
     )
     assert await scanner.episode_number_lookup(episode)
-    # there is no reason to have a lookup record for an
-    # episode that already contains the episode number.
-    with pytest.raises(Exception):
-        await scanner.episode_number.db_lookup(episode)
     assert 4 == await scanner.episode_number.lookup(episode)
 
 
@@ -247,6 +243,12 @@ async def test_parse_episodes(play_db_test: Database):
     info = scanner.parse(path)
     assert info.title == 'boruto naruto next generations (2017)'
     assert info.episode_number == 6
+
+
+    path = 'Boruto Naruto Next Generations (2017).mkv'
+    info = scanner.parse(path)
+    assert info == None
+
     
     path = 'Vinland Saga (2019) - S01E01 - 005 - [HDTV-1080p][8bit][h264][AAC 2.0].mkv'
     info = scanner.parse(path)
@@ -269,7 +271,7 @@ async def test_parse_episodes(play_db_test: Database):
     info = scanner.parse(path)
     assert info.season == 1
     assert info.episode == 2
-    assert info.title == 'the last of us'
+    assert info.title == 'the last of us'    
 
 
 if __name__ == '__main__':
