@@ -214,16 +214,11 @@ class Episode_scan(Play_scan):
                 if 'file_title' not in fields:
                     continue
                 
-                # Prevent more vague matches from contributing to the result
-                if result.title and match.group('file_title').strip().lower() != result.title:
-                    continue
+                result.title = match.group('file_title').strip().lower()
 
-                if not result.title:
-                    result.title = match.group('file_title').strip().lower()
-
-                if 'season' in fields and not result.season:
+                if 'season' in fields:
                     result.season = int(match.group('season'))
-                if 'episode' in fields and not result.season:
+                if 'episode' in fields:
                     result.episode = int(match.group('episode'))
 
                 number = None
@@ -231,26 +226,23 @@ class Episode_scan(Play_scan):
                     number = match.group('episode')
                 elif 'episode_start' in fields:
                     number = match.group('episode_start')
-                if number and not result.episode:
+                if number:
                     if not result.season:
-                        if not result.episode_number:
-                            result.episode_number = int(number)
+                        result.episode_number = int(number)
                     else:
                         result.episode = int(number)
 
-                if 'absolute_number' in fields and not result.episode_number:
+                if 'absolute_number' in fields:
                     result.episode_number = int(match.group('absolute_number'))
 
-                if 'year' in fields and 'month' in fields and 'day' in fields and not result.date:
+                if 'year' in fields and 'month' in fields and 'day' in fields:
                     result.date = date(int(match.group('year')), int(match.group('month')), int(match.group('day')))
-                
+                return result
             except re.error as error:
                 logger.exception(f'episode parse re error: {error}')
             except:
                 logger.exception(f'episode parse pattern: {pattern}')
-
-        return result if result.title and (result.episode_number or (result.season and result.episode)) else None
-
+                
 
     def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
         d = guessit(filename, {

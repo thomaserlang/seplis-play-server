@@ -1,5 +1,17 @@
 # from https://github.com/dbr/tvnamer/blob/master/tvnamer/config_defaults.py
 SERIES_FILENAME_PATTERNS = [
+     # foo - s01e01 - 001
+    r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
+    [Ss](?P<season>[0-9]+)[Ee](?P<episode>[0-9]+)[ ]?[ \._\-][ ]?
+    (?P<absolute_number>[0-9]+)
+    [\._ -][^\\/]*$''',
+
+    # Foo - S2 E 02 - etc
+    r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
+    [Ss](?P<season>[0-9]+)[\.\- ]?
+    [Ee]?[ ]?(?P<episode>[0-9]+)
+    [^\\/]*$''',
+
     # [group] Show - 01-02 [crc]
     r'''^\[(?P<group>.+?)\][ ]?              # group name, captured for [#100]
     (?P<file_title>.*?)[ ]?[-_][ ]?          # show name, padding, spaces?
@@ -135,23 +147,11 @@ SERIES_FILENAME_PATTERNS = [
     (?P<day>\d{2})                           # day
     [^\/]*$''',
 
-    # Foo - S2 E 02 - etc
-    r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
-    [Ss](?P<season>[0-9]+)[\.\- ]?
-    [Ee]?[ ]?(?P<episode>[0-9]+)
-    [^\\/]*$''',
-
     # show name Season 01 Episode 20
     r'''^(?P<file_title>.+?)[ ]?        # Show name
     [Ss]eason[ ]?(?P<season>[0-9]+)[ ]? # Season 1
     [Ee]pisode[ ]?(?P<episode>[0-9]+)   # Episode 20
     [^\/]*$''',                         # Anything
-
-     # foo - s01e01 - 001
-    r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
-    [Ss](?P<season>[0-9]+)[Ee](?P<episode>[0-9]+)[ ]?[ \._\-][ ]?
-    (?P<absolute_number>[0-9]+)
-    [\._ -][^\\/]*$''',
 
     # foo.103*
     r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
