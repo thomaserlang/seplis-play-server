@@ -46,6 +46,7 @@ class Movie_scan(Play_scan):
                 if not movie_id:
                     movie_id = await self.lookup(item)
                     if not movie_id:
+                        logger.info(f'No movie found for {item.title} ({path})')
                         return
                 try:
                     metadata = await self.get_metadata(path)
@@ -118,7 +119,6 @@ class Movie_scan(Play_scan):
                 r.raise_for_status()
                 movies = r.json()
                 if not movies:
-                    logger.info(f'Didn\'t find a match for movie "{title}"')
                     return
                 logger.debug(f'[movie-{movies[0]["id"]}] Found: {movies[0]["title"]}')
                 movie = models.Movie_id_lookup(

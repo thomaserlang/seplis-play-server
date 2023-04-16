@@ -38,7 +38,7 @@ class Episode_scan(Play_scan):
         return result
 
 
-    async def episode_series_id_lookup(self, episode: schemas.Parsed_file_episode):
+    async def episode_series_id_lookup(self, episode: schemas.Parsed_file_episode, path: str = None):
         if episode.title in self.not_found_series:
             return False
         logger.debug(f'Looking for a series with title: "{episode.title}"')
@@ -49,11 +49,11 @@ class Episode_scan(Play_scan):
             return True
         else:
             self.not_found_series.append(episode.title)
-            logger.info(f'No series found for title: "{episode.title}"')
+            logger.info(f'No series found for "{episode.title}" ({path})')
         return False
 
 
-    async def episode_number_lookup(self, episode: schemas.Parsed_file_episode):
+    async def episode_number_lookup(self, episode: schemas.Parsed_file_episode, path: str = None):
         '''
         Tries to lookup the episode number of the episode.
         Sets the number in the episode object if successful.
@@ -72,7 +72,7 @@ class Episode_scan(Play_scan):
             episode.episode_number = number
             return True
         else:
-            logger.info(f'[series-{episode.series_id}] No episode found for {value}')
+            logger.info(f'[series-{episode.series_id}] No episode found for {value} ({path})')
         return False
 
 
@@ -88,12 +88,10 @@ class Episode_scan(Play_scan):
             if not ep or (ep.modified_time != modified_time) or not ep.meta_data:
                 if not ep:
                     if not item.series_id:
-                        if not await self.episode_series_id_lookup(item):
-                            logger.info(f'No series found for file {path}')
+                        if not await self.episode_series_id_lookup(item, path):
                             return False
                     if not item.episode_number:
-                        if not await self.episode_number_lookup(item):
-                            logger.info(f'No episode found for file {path}')
+                        if not await self.episode_number_lookup(item, path):
                             return False
                 try:
                     metadata = await self.get_metadata(path)
