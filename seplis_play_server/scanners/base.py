@@ -27,6 +27,10 @@ class Play_scan:
 
     async def scan(self):
         raise NotImplementedError()
+    
+    
+    async def get_paths_matching_base_path(self, base_path):
+        raise NotImplementedError()
 
 
     def get_files(self):

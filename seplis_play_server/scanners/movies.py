@@ -174,3 +174,11 @@ class Movie_scan(Play_scan):
                 logger.info(f'[movie-{movie_id}] Deleted from play server index')
         else:
             logger.warn(f'[movie-{movie_id}] No server_id specified')
+
+
+    async def get_paths_matching_base_path(self, base_path):
+        async with database.session() as session:
+            results = await session.scalars(sa.select(models.Movie.path).where(
+                models.Movie.path.like(f'{base_path}%')
+            ))
+            return [r for r in results]

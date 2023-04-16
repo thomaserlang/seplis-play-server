@@ -269,6 +269,14 @@ class Episode_scan(Play_scan):
             logger.info(f'{filename} doesn\'t look like an episode')
 
 
+    async def get_paths_matching_base_path(self, base_path: str):
+        async with database.session() as session:
+            results = await session.scalars(sa.select(models.Episode.path).where(
+                models.Episode.path.like(f'{base_path}%'),
+            ))
+            return [r for r in results]
+
+
 class Series_id_lookup(object):
     '''Used to lookup a series id by it's title.
     The result will be cached in the local db.
