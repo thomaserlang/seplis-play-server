@@ -147,6 +147,12 @@ SERIES_FILENAME_PATTERNS = [
     [Ee]pisode[ ]?(?P<episode>[0-9]+)   # Episode 20
     [^\/]*$''',                         # Anything
 
+     # foo - s01e01 - 001
+    r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
+    [Ss](?P<season>[0-9]+)[Ee](?P<episode>[0-9]+)[ ]?[ \._\-][ ]?
+    (?P<absolute_number>[0-9]+)
+    [\._ -][^\\/]*$''',
+
     # foo.103*
     r'''^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
     (?P<absolute_number>[0-9]+)

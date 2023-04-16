@@ -256,7 +256,13 @@ async def test_parse_episodes(play_db_test: Database):
     assert info.episode == 1
     assert info.episode_number == 5
     assert info.title == 'vinland saga (2019)'
-
+    
+    path = 'The Big Bang Theory (2007) - S04E01 [Bluray-1080p][AAC 5.1][x265].mkv'
+    info = scanner.parse(path)
+    assert info.season == 4
+    assert info.episode == 1
+    assert info.episode_number == None
+    assert info.title == 'the big bang theory (2007)'
 
     path = 'Vinland Saga (2019) - S01E01 - 005 - [HDTV-1080p][8bit][h264][AAC 2.0].mkv'
     scanner.parser = 'guessit'

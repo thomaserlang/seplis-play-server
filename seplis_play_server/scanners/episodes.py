@@ -214,6 +214,10 @@ class Episode_scan(Play_scan):
                 if 'file_title' not in fields:
                     continue
                 
+                # Prevent more vague matches from contributing to the result
+                if result.title and match.group('file_title').strip().lower() != result.title:
+                    continue
+
                 if not result.title:
                     result.title = match.group('file_title').strip().lower()
 
