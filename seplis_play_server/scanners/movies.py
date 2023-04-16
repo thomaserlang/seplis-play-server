@@ -17,8 +17,6 @@ class Movie_scan(Play_scan):
             title = self.parse(f)
             if title:
                 await self.save_item(title, f)
-            else:
-                logger.debug(f'"{f}" didn\'t match any pattern')
 
 
     def parse(self, filename):
@@ -78,7 +76,7 @@ class Movie_scan(Play_scan):
                 except Exception as e:
                     logger.error(str(e))
             else:
-                logger.info(f'[movie-{movie_id}] Nothing changed for {path}')
+                logger.debug(f'[movie-{movie_id}] Nothing changed for {path}')
             if self.make_thumbnails:
                 asyncio.create_task(self.thumbnails(f'movie-{movie_id}', path))
             return True
@@ -150,7 +148,7 @@ class Movie_scan(Play_scan):
 
                 await self.delete_from_index(movie_id=movie_id, session=session)
 
-                logger.info(f'[movie-{movie_id}] Deleted path: {path}')
+                logger.info(f'[movie-{movie_id}] Deleted: {path}')
                 return True
                 
         return False
@@ -171,8 +169,8 @@ class Movie_scan(Play_scan):
                 }
             )
             if r.status_code >= 400:
-                logger.error(f'[movie-{movie_id}] Faild to inform that we have the movie: {r.content}')
+                logger.error(f'[movie-{movie_id}] Failed to add the movie to the play server index: {r.content}')
             else:
-                logger.info(f'[movie-{movie_id}] Added to play server index')
+                logger.info(f'[movie-{movie_id}] Deleted from play server index')
         else:
             logger.warn(f'[movie-{movie_id}] No server_id specified')

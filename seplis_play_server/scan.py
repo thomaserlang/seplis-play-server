@@ -47,7 +47,7 @@ async def cleanup_episodes():
         deleted_count = 0
         rows = await session.scalars(sa.select(models.Episode))
         for e in rows:
-            logger.info(f'Checking if exists: {e.path}')
+            logger.debug(f'Checking if exists: {e.path}')
             if os.path.exists(e.path):
                 episodes.append(schemas.Play_server_episode_create(
                     series_id=e.series_id,
@@ -87,7 +87,7 @@ async def cleanup_movies():
         rows = await session.scalars(sa.select(models.Movie))
         deleted_count = 0
         for m in rows:
-            logger.info(f'Checking if exists: {m.path}')
+            logger.debug(f'Checking if exists: {m.path}')
             if os.path.exists(m.path):
                 movies.append(schemas.Play_server_movie_create(
                     movie_id=m.movie_id,

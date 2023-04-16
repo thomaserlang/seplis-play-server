@@ -25,14 +25,17 @@ class Episode_scan(Play_scan):
             parsed_episode = self.parse(f)
             if parsed_episode:
                 await self.save_item(parsed_episode, f)
-            else:
-                logger.debug(f'"{f}" didn\'t match any pattern')
 
 
     def parse(self, filename):
+        result = None
         if self.parser == 'guessit':
-            return self.guessit_parse_file_name(filename)
-        return self.regex_parse_file_name(filename)
+            result =  self.guessit_parse_file_name(filename)
+        if self.parser == 'internal':
+            result = self.regex_parse_file_name(filename)
+        if not result:
+            logger.info(f'{filename} doesn\'t look like a episode')
+        return result
 
 
     async def episode_series_id_lookup(self, episode: schemas.Parsed_file_episode):
@@ -123,7 +126,7 @@ class Episode_scan(Play_scan):
                 except Exception as e:
                     logger.error(str(e))
             else:                
-                logger.info(f'[episode-{item.series_id}-{item.episode_number}] Nothing changed for {path}')
+                logger.debug(f'[episode-{item.series_id}-{item.episode_number}] Nothing changed for {path}')
             if self.make_thumbnails:
                 asyncio.create_task(self.thumbnails(f'episode-{item.series_id}-{item.episode_number}', path))
             return True
@@ -242,7 +245,7 @@ class Episode_scan(Play_scan):
                 logger.exception(f'episode parse re error: {error}')
             except:
                 logger.exception(f'episode parse pattern: {pattern}')
-                
+
 
     def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
         d = guessit(filename, {
