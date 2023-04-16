@@ -14,5 +14,5 @@ httpx==0.23.3
 respx==0.20.1
 orjson==3.8.7
 guessit==3.7.1
-watchfiles==0.18.1
+watchfiles==0.19.0
 aiofile==3.8.1
