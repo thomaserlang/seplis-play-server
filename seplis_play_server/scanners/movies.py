@@ -46,7 +46,7 @@ class Movie_scan(Play_scan):
                 if not movie_id:
                     movie_id = await self.lookup(item)
                     if not movie_id:
-                        logger.info(f'No movie found for {item.title} ({path})')
+                        logger.info(f'No movie found for {item} ({path})')
                         return
                 try:
                     metadata = await self.get_metadata(path)
