@@ -60,7 +60,7 @@ async def worker(queue: asyncio.Queue):
         logger.info(f'{change.name}: {path} ({scan_info.type})')
         scanner = get_scanner(scan_info)
         info = os.path.splitext(path)
-        if len(info) == 2:
+        if len(info) == 2 and info[1]:
             if info[1][1:].lower() not in config.media_types:
                 continue
             parsed = scanner.parse(path)
@@ -71,7 +71,6 @@ async def worker(queue: asyncio.Queue):
                     await scanner.delete_path(path)
             else:
                 logger.warning(f'Unknown: {path}')
-
         else:
             # if path is a directory scan it
             if change == Change.added:
