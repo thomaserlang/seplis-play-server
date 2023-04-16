@@ -22,7 +22,6 @@ async def main():
                 if path.lower().startswith(str(scan.path).lower()):
                     scan_info = scan
                     break
-            logger.debug(f'{change.name}: {path} ({scan_info.type})')
             # if the file is being writtin it will trigger a change event multiple times
             # so we try and wait for the file to be written before parsing it.
             if path in files_waiting_to_finish:
@@ -58,6 +57,7 @@ async def worker(queue: asyncio.Queue):
             break
         change, path, scan_info = item
 
+        logger.info(f'{change.name}: {path} ({scan_info.type})')
         scanner = get_scanner(scan_info)
         info = os.path.splitext(path)
         if len(info) == 2:
