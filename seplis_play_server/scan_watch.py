@@ -57,7 +57,7 @@ async def worker(queue: asyncio.Queue):
             break
         change, path, scan_info = item
 
-        logger.info(f'{change.name}: {path} ({scan_info.type})')
+        logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
         scanner = get_scanner(scan_info)
         info = os.path.splitext(path)
         if len(info) == 2 and info[1]:
