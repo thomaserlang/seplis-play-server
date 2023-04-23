@@ -3,7 +3,7 @@ import shutil
 from fastapi import Query
 from typing import Dict, Literal, Optional, Annotated
 from pydantic import BaseModel, constr, conint, validator
-from seplis_play_server import config, logger, constants
+from seplis_play_server import config, logger
 
 class Transcode_settings(BaseModel):
     play_id: constr(min_length=1)
@@ -11,7 +11,7 @@ class Transcode_settings(BaseModel):
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
-    supported_video_color_bit_depth: conint(ge=8) = 8
+    supported_video_color_bit_depth: conint(ge=8) = 10
     format: Literal['pipe', 'hls', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
