@@ -51,8 +51,7 @@ class Subtitle_scan(Play_scan):
                 except:
                     continue
         if not r['language']:
-            logger.info(f'{filename} doesn\'t have a recognized language')
-            return
+            r['language'] = config.subtitle_external_default_language
         return r
 
     async def delete_path(self, path):
