@@ -4,9 +4,7 @@ import sqlalchemy as sa
 from seplis_play_server import config, utils, logger, models, schemas
 from seplis_play_server.client import client
 from seplis_play_server.database import database
-
-
-from .scanners import Movie_scan, Episode_scan
+from .scanners import Movie_scan, Episode_scan, Subtitle_scan
 
 
 async def scan(disable_cleanup=False, disable_thumbnails=False):
@@ -26,8 +24,14 @@ async def scan(disable_cleanup=False, disable_thumbnails=False):
                 cleanup_mode=not disable_cleanup,
                 parser=s.parser, 
             )
+        subtitles_scanner = Subtitle_scan(
+            scan_path=s.path, 
+            make_thumbnails=False,
+            parser=s.parser,
+        )
         if scanner:
             await scanner.scan()
+            await subtitles_scanner.scan()
         else:
             logger.error(f'Scan type: "{s.type}" is not supported')
 
@@ -39,6 +43,7 @@ async def cleanup():
     logger.info('Cleanup started')
     await cleanup_episodes()
     await cleanup_movies()
+    await cleanup_subtitles()
 
 
 async def cleanup_episodes():
@@ -117,6 +122,22 @@ async def cleanup_movies():
                 logger.error(f'Faild to add {len(movies)} movies to the movie play server index ({config.server_id}): {r.content}')
             else:
                 logger.info(f'Updated the movie play server index with {len(movies)} movies ({config.server_id})')
+
+
+async def cleanup_subtitles():
+    async with database.session() as session:
+        rows = await session.scalars(sa.select(models.External_subtitle))
+        deleted_count = 0
+        for s in rows:
+            logger.debug(f'Checking if exists: {s.path}')
+            if os.path.exists(s.path):
+                continue
+            deleted_count += 1
+            await session.execute(sa.delete(models.External_subtitle).where(
+                models.External_subtitle.path == s.path,
+            ))
+        await session.commit()
+        logger.info(f'{deleted_count} subtitles was deleted from the database')
 
 
 def upgrade_scan_db():

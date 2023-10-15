@@ -1,7 +1,10 @@
+import sqlalchemy as sa
+from iso639 import Lang
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from ..transcoders.video import get_video_color_bit_depth, get_video_color, get_video_stream
 from ..dependencies import get_metadata
+from .. import database, models, logger
 
 router = APIRouter()
 
@@ -68,7 +71,34 @@ async def get_sources(metadata = Depends(get_metadata)):
             elif stream['codec_type'] == 'subtitle':
                 if stream['codec_name'] not in ('dvd_subtitle', 'hdmv_pgs_subtitle'):
                     d.subtitles.append(s)
+        await fill_external_subtitles(metad['format']['filename'], d.subtitles)
     return sorted(data, key=lambda x: x.width)
+
+
+async def fill_external_subtitles(filename, subtitles: list[Source_stream_model]):
+    async with database.session() as session:
+        filename = filename.rsplit('.', 1)[0]
+        logger.info(filename)
+        results = await session.scalars(sa.select(models.External_subtitle).where(
+            models.External_subtitle.path.like(f'{filename}.%'),
+        ))
+        for r in results:
+            try:
+                l = Lang(r.language)
+                name = l.name
+                if r.sdh:
+                    name += ' SDH'
+                s = Source_stream_model(
+                    title=name,
+                    language=r.language,
+                    index=r.id + 1000,
+                    codec=r.type,
+                    default=r.default,
+                    forced=r.forced,
+                )
+                subtitles.append(s)
+            except Exception as e:
+                logger.exception(e)
 
 
 def resolution_text(width: int, height: int):

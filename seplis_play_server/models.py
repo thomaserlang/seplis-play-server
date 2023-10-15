@@ -72,3 +72,15 @@ class Movie(base):
     path = sa.Column(sa.String(400), primary_key=True)
     meta_data = sa.Column('metadata', sa.JSON)
     modified_time = sa.Column(UtcDateTime)
+
+
+class External_subtitle(base):
+    __tablename__ = 'external_subtitles'
+
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    path = sa.Column(sa.String(1000), nullable=False)
+    type = sa.Column(sa.String(100), nullable=False)
+    language = sa.Column(sa.String(100), nullable=False)
+    forced = sa.Column(sa.Boolean, nullable=False, server_default='0')
+    default = sa.Column(sa.Boolean, nullable=False, server_default='0')
+    sdh = sa.Column(sa.Boolean, nullable=False, server_default='0')

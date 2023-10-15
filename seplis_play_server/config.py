@@ -25,6 +25,7 @@ class ConfigModel(BaseSettings):
     secret: str
     scan: list[ConfigPlayScanModel]
     media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg', 'm4v']
+    subtitle_types: list[str] = ['srt', 'vtt', 'ass']
     
     ffmpeg_folder: pathlib.Path = '/bin'
     ffmpeg_loglevel = '40'

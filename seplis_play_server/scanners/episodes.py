@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from seplis_play_server import constants, models, config, utils, logger, schemas
 from seplis_play_server.client import client
 from seplis_play_server.database import database
+from seplis_play_server.scanners.subtitles import Subtitle_scan
 from .base import Play_scan
 
 
@@ -16,16 +17,7 @@ class Episode_scan(Play_scan):
         self.series_id = Series_id_lookup(scanner=self)
         self.episode_number = Episode_number_lookup(scanner=self)
         self.not_found_series = []
-
-
-    async def scan(self):
-        logger.info(f'Scanning: {self.scan_path}')
-        files = self.get_files()
-        for f in files:
-            parsed_episode = self.parse(f)
-            if parsed_episode:
-                await self.save_item(parsed_episode, f)
-
+        self.subtitles_scan = Subtitle_scan(scan_path=scan_path)
 
     def parse(self, filename):
         result = None
@@ -36,7 +28,6 @@ class Episode_scan(Play_scan):
         if not result:
             logger.info(f'{filename} doesn\'t look like a episode')
         return result
-
 
     async def episode_series_id_lookup(self, episode: schemas.Parsed_file_episode, path: str = None):
         if episode.title in self.not_found_series:
@@ -51,7 +42,6 @@ class Episode_scan(Play_scan):
             self.not_found_series.append(episode.title)
             logger.info(f'No series found for "{episode.title}" ({path})')
         return False
-
 
     async def episode_number_lookup(self, episode: schemas.Parsed_file_episode, path: str = None):
         '''
@@ -74,7 +64,6 @@ class Episode_scan(Play_scan):
         else:
             logger.info(f'[series-{episode.series_id}] No episode found for {value} ({path})')
         return False
-
 
     async def save_item(self, item: schemas.Parsed_file_episode, path: str):
         async with database.session() as session:
@@ -129,7 +118,6 @@ class Episode_scan(Play_scan):
                 asyncio.create_task(self.thumbnails(f'episode-{item.series_id}-{item.episode_number}', path))
             return True
 
-
     async def add_to_index(self, series_id: int, episode_number: int, created_at: datetime = None):
         if self.cleanup_mode:
             return
@@ -154,7 +142,6 @@ class Episode_scan(Play_scan):
         else:
             logger.info(f'[episode-{series_id}-{episode_number}] Added to play server index ({config.server_id})')
 
-
     async def delete_path(self, path):
         async with database.session() as session:
             episode = await session.scalar(sa.select(models.Episode).where(
@@ -171,7 +158,6 @@ class Episode_scan(Play_scan):
                 logger.info(f'[episode-{episode.series_id}-{episode.number}] Deleted: {path}')
                 return True
         return False
-
 
     async def delete_from_index(self, series_id: int, episode_number: int, session):
         if self.cleanup_mode:
@@ -197,7 +183,6 @@ class Episode_scan(Play_scan):
             logger.error(f'[episode-{series_id}-{episode_number}] Faild to remove the episode from the play server index: {r.content}')
         else:
             logger.info(f'[episode-{series_id}-{episode_number}] Removed from play server index')
-
 
     def regex_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode: 
         result = schemas.Parsed_file_episode()
@@ -244,7 +229,6 @@ class Episode_scan(Play_scan):
             except:
                 logger.exception(f'episode parse pattern: {pattern}')
 
-
     def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
         d = guessit(filename, {
             'type': 'episode',
@@ -268,14 +252,12 @@ class Episode_scan(Play_scan):
         else:
             logger.info(f'{filename} doesn\'t look like an episode')
 
-
     async def get_paths_matching_base_path(self, base_path: str):
         async with database.session() as session:
             results = await session.scalars(sa.select(models.Episode.path).where(
                 models.Episode.path.like(f'{base_path}%'),
             ))
             return [r for r in results]
-
 
 class Series_id_lookup(object):
     '''Used to lookup a series id by it's title.

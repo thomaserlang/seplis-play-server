@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Response, Depends
 from pydantic import constr
-from ..transcoders.subtitle import get_subtitle_file
+from ..transcoders.subtitle import get_subtitle_file, get_subtitle_file_from_external
 from ..dependencies import get_metadata
 
 router = APIRouter()
@@ -14,11 +14,17 @@ async def download_subtitle(
 ):    
     if not metadata:
         raise HTTPException(404, 'No metadata')
-    sub = await get_subtitle_file(
-        metadata=metadata[source_index], 
-        lang=lang, 
-        start_time=start_time
-    )
+    if int(lang.split(':')[1]) < 1000:
+        sub = await get_subtitle_file(
+            metadata=metadata[source_index], 
+            lang=lang, 
+            start_time=start_time
+        )
+    else:
+        sub = await get_subtitle_file_from_external(
+            id_=int(lang.split(':')[1])-1000,
+            start_time=start_time,
+        )
     if not sub:
         raise HTTPException(500, 'Unable retrive subtitle file')
     return Response(content=sub, media_type='text/vtt')

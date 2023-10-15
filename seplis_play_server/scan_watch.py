@@ -1,7 +1,7 @@
 import asyncio
 import os
 from watchfiles import awatch, Change
-from seplis_play_server.scanners import Movie_scan, Episode_scan, Play_scan
+from seplis_play_server.scanners import Movie_scan, Episode_scan, Play_scan, Subtitle_scan
 from seplis_play_server import config, logger
 from seplis_play_server.config import ConfigPlayScanModel
 
@@ -16,13 +16,13 @@ async def main():
         logger.info(f'Watching: {scan.path} ({scan.type})')
     async for changes in awatch(*[str(scan.path) for scan in config.scan]):
         for c in changes:
-            change, path = c       
-            scan_info = None     
+            change, path = c
+            scan_info = None
             for scan in config.scan:
                 if path.lower().startswith(str(scan.path).lower()):
                     scan_info = scan
                     break
-            # if the file is being writtin it will trigger a change event multiple times
+            # if the file is being written it will trigger a change event multiple times
             # so we try and wait for the file to be written before parsing it.
             if path in files_waiting_to_finish:
                 files_waiting_to_finish[path].cancel()
@@ -35,18 +35,26 @@ async def main():
             ))
 
 
-def get_scanner(scan: ConfigPlayScanModel) -> Play_scan:
-    if scan.type == 'series':
+def get_scanner(scan: ConfigPlayScanModel, type_=None) -> Play_scan:
+    if not type_:
+        type_ = scan.type
+    if type_ == 'series':
         return Episode_scan(
             scan_path=scan.path, 
             make_thumbnails=scan.make_thumbnails,
             parser=scan.parser,
         )
-    elif scan.type == 'movies':
+    elif type_ == 'movies':
         return Movie_scan(
             scan_path=scan.path, 
             make_thumbnails=scan.make_thumbnails,
             parser=scan.parser, 
+        )
+    elif type_ == 'subtitles':
+        return Subtitle_scan(
+            scan_path=scan.path, 
+            make_thumbnails=False,
+            parser=scan.parser,
         )
 
 
@@ -56,30 +64,40 @@ async def worker(queue: asyncio.Queue):
         if item is None:
             break
         change, path, scan_info = item
-
-        logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
-        scanner = get_scanner(scan_info)
-        info = os.path.splitext(path)
-        if len(info) == 2 and info[1]:
-            if info[1][1:].lower() not in config.media_types:
-                continue
-            parsed = scanner.parse(path)
-            if parsed:
-                if change in (Change.added, Change.modified):
-                    await scanner.save_item(parsed, path)
-                elif change == Change.deleted:
-                    await scanner.delete_path(path)
+        try:
+            logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
+            scanner = get_scanner(scan_info)
+            scanner_subtitles = get_scanner(scan_info, type_='subtitles')
+            info = os.path.splitext(path)
+            if len(info) == 2 and info[1]:
+                if info[1][1:].lower() in config.media_types:
+                    s = scanner
+                elif info[1][1:].lower() in config.subtitle_types:
+                    s = scanner_subtitles
+                else:
+                    continue
+                parsed = s.parse(path)
+                if parsed:
+                    if change in (Change.added, Change.modified):
+                        await s.save_item(parsed, path)
+                    elif change == Change.deleted:
+                        await s.delete_path(path)
+                else:
+                    logger.warning(f'Unknown: {path}')
             else:
-                logger.warning(f'Unknown: {path}')
-        else:
-            # if path is a directory scan it
-            if change == Change.added:
-                scanner.scan_path = path
-                await scanner.scan()
-            elif change == Change.deleted:
-                paths = await scanner.get_paths_matching_base_path(path)
-                for path in paths:
-                    await scanner.delete_path(path)
+                # if path is a directory scan it
+                if change == Change.added:
+                    await scanner.scan()
+                    await scanner_subtitles.scan()
+                elif change == Change.deleted:
+                    paths = await scanner.get_paths_matching_base_path(path)
+                    for path in paths:
+                        await scanner.delete_path(path)
+                    paths = await scanner_subtitles.get_paths_matching_base_path(path)
+                    for path in paths:
+                        await scanner_subtitles.delete_path(path)
+        except Exception as e:
+            logger.exception(e)
         
         queue.task_done()
 
