@@ -87,7 +87,9 @@ async def fill_external_subtitles(filename, subtitles: list[Source_stream_model]
                 l = Lang(r.language)
                 name = l.name
                 if r.sdh:
-                    name += ' SDH'
+                    name += ' (SDH)'
+                if r.forced:
+                    name += ' (Forced)'
                 s = Source_stream_model(
                     title=name,
                     language=r.language,
