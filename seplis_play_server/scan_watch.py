@@ -67,9 +67,9 @@ async def worker(queue: asyncio.Queue):
         try:
             logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
             scanner = get_scanner(scan_info)
-            scanner.path = path
+            scanner.scan_path = path
             scanner_subtitles = get_scanner(scan_info, type_='subtitles')
-            scanner_subtitles.path = path
+            scanner_subtitles.scan_path = path
             info = os.path.splitext(path)
             if len(info) == 2 and info[1]:
                 if info[1][1:].lower() in config.media_types:
