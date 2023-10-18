@@ -47,6 +47,7 @@ async def cleanup():
 
 
 async def cleanup_episodes():
+    logger.info('Cleanup episodes started')
     episodes: list[schemas.Play_server_episode_create] = []
     async with database.session() as session:
         deleted_count = 0
@@ -87,6 +88,7 @@ async def cleanup_episodes():
 
 
 async def cleanup_movies():
+    logger.info('Cleanup movies started')
     movies: list[schemas.Play_server_movie_create] = []
     async with database.session() as session:
         rows = await session.scalars(sa.select(models.Movie))
@@ -125,6 +127,7 @@ async def cleanup_movies():
 
 
 async def cleanup_subtitles():
+    logger.info('Cleanup subtitles started')
     async with database.session() as session:
         rows = await session.scalars(sa.select(models.External_subtitle))
         deleted_count = 0

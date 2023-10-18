@@ -9,7 +9,8 @@ from seplis_play_server import logger
 
 class Subtitle_scan(Play_scan):
 
-    EXTS = config.subtitle_types
+    SCANNER_NAME = 'Subtitles'
+    SUPPORETD_EXTS = config.subtitle_types
 
     async def save_item(self, item, path):
         async with database.session() as session:

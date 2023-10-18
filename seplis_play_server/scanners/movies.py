@@ -10,6 +10,8 @@ from .base import Play_scan
 
 class Movie_scan(Play_scan):
 
+    SCANNER_NAME = 'Movies'
+
     def parse(self, filename):
         d = guessit(filename, {
             'type': 'movie',

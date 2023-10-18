@@ -12,6 +12,8 @@ from .base import Play_scan
 
 class Episode_scan(Play_scan):
 
+    SCANNER_NAME = 'Episodes'
+
     def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False, parser = 'internal'):
         super().__init__(scan_path, make_thumbnails, cleanup_mode, parser)
         self.series_id = Series_id_lookup(scanner=self)

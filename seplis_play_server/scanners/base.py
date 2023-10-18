@@ -4,11 +4,12 @@ from seplis_play_server import config, utils, logger
 
 class Play_scan:
 
-    EXTS = config.media_types
+    SCANNER_NAME = 'Unnamed scanner'
+    SUPPORTED_EXTS = config.media_types
 
     def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False, parser = 'internal'):
         if not os.path.exists(scan_path):
-            raise Exception(f'scan_path "{scan_path}" does not exist')
+            raise Exception(f'scan_path "{scan_path}" does not exist ({self.SCANNER_NAME})')
         self.scan_path = scan_path
         self.make_thumbnails = make_thumbnails
         self.cleanup_mode = cleanup_mode
@@ -28,7 +29,7 @@ class Play_scan:
         raise NotImplementedError()
 
     async def scan(self):
-        logger.info(f'Scanning: {self.scan_path}')
+        logger.info(f'Scanning: {self.scan_path} ({self.SCANNER_NAME})')
         files = self.get_files()
         for f in files:
             title = self.parse(f)
@@ -47,7 +48,7 @@ class Play_scan:
                     continue
                 if len(info) != 2:
                     continue
-                if info[1][1:].lower() not in self.EXTS:
+                if info[1][1:].lower() not in self.SUPPORTED_EXTS:
                     continue
                 files.append(
                     os.path.join(dirname, file_)
