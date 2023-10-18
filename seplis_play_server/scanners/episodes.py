@@ -68,6 +68,9 @@ class Episode_scan(Play_scan):
         return False
 
     async def save_item(self, item: schemas.Parsed_file_episode, path: str):
+        if not os.path.exists(path):
+            logger.debug(f'Path doesn\'t exist any longer: {path}')
+            return
         async with database.session() as session:
             ep = await session.scalar(sa.select(models.Episode).where(
                 models.Episode.path == path,

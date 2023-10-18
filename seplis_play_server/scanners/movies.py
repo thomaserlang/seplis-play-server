@@ -1,3 +1,4 @@
+import os.path
 import asyncio
 import sqlalchemy as sa
 from datetime import datetime, timezone
@@ -27,6 +28,9 @@ class Movie_scan(Play_scan):
         logger.info(f'{filename} doesn\'t look like a movie')
 
     async def save_item(self, item: str, path: str):
+        if not os.path.exists(path):
+            logger.debug(f'Path doesn\'t exist any longer: {path}')
+            return
         async with database.session() as session:
             movie = await session.scalar(sa.select(models.Movie).where(
                 models.Movie.path == path,

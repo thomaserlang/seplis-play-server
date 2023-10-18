@@ -1,4 +1,5 @@
 
+import os.path
 from iso639 import Lang
 import sqlalchemy as sa
 from seplis_play_server.database import database
@@ -13,6 +14,9 @@ class Subtitle_scan(Play_scan):
     SUPPORETD_EXTS = config.subtitle_types
 
     async def save_item(self, item, path):
+        if not os.path.exists(path):
+            logger.debug(f'Path doesn\'t exist any longer: {path}')
+            return
         async with database.session() as session:
             s = await session.scalar(sa.select(models.External_subtitle).where(
                 models.External_subtitle.path == path,
