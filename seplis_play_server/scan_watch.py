@@ -66,25 +66,25 @@ async def worker(queue: asyncio.Queue):
         change, path, scan_info = item
         try:
             logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
-            scanner = get_scanner(scan_info)
-            scanner_subtitles = get_scanner(scan_info, type_='subtitles')
             info = os.path.splitext(path)
             if len(info) == 2 and info[1]:
                 if info[1][1:].lower() in config.media_types:
-                    s = scanner
+                    s = get_scanner(scan_info)
                 elif info[1][1:].lower() in config.subtitle_types:
-                    s = scanner_subtitles
+                    s = get_scanner(scan_info, type_='subtitles')
                 else:
                     continue
-                parsed = s.parse(path)
-                if parsed:
-                    if change in (Change.added, Change.modified):
+                if change in (Change.added, Change.modified):
+                    parsed = s.parse(path)
+                    if parsed:
                         await s.save_item(parsed, path)
-                    elif change == Change.deleted:
-                        await s.delete_path(path)
+                elif change == Change.deleted:
+                    await s.delete_path(path)
                 else:
                     logger.warning(f'Unknown: {path}')
             else:
+                scanner = get_scanner(scan_info)
+                scanner_subtitles = get_scanner(scan_info, type_='subtitles')
                 # if path is a directory scan it
                 if change == Change.added:
                     for s in (scanner, scanner_subtitles):
