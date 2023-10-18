@@ -33,7 +33,7 @@ async def main():
                 change=change,
                 scan_info=scan_info,
             ))
-
+    w.cancel()
 
 def get_scanner(scan: ConfigPlayScanModel, type_=None) -> Play_scan:
     if not type_:
