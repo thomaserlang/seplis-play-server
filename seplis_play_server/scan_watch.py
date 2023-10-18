@@ -22,6 +22,8 @@ async def main():
                 if path.lower().startswith(str(scan.path).lower()):
                     scan_info = scan
                     break
+            if not scan_info:
+                continue
 
             # if the file is being written it will trigger a change event multiple times
             # so we try and wait for the file to be written before parsing it.
