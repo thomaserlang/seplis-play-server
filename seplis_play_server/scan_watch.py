@@ -67,9 +67,7 @@ async def worker(queue: asyncio.Queue):
         try:
             logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
             scanner = get_scanner(scan_info)
-            scanner.scan_path = path
             scanner_subtitles = get_scanner(scan_info, type_='subtitles')
-            scanner_subtitles.scan_path = path
             info = os.path.splitext(path)
             if len(info) == 2 and info[1]:
                 if info[1][1:].lower() in config.media_types:
@@ -89,15 +87,14 @@ async def worker(queue: asyncio.Queue):
             else:
                 # if path is a directory scan it
                 if change == Change.added:
-                    await scanner.scan()
-                    await scanner_subtitles.scan()
+                    for s in (scanner, scanner_subtitles):
+                        s.scan_path = path
+                        await s.scan()
                 elif change == Change.deleted:
-                    paths = await scanner.get_paths_matching_base_path(path)
-                    for path in paths:
-                        await scanner.delete_path(path)
-                    paths = await scanner_subtitles.get_paths_matching_base_path(path)
-                    for path in paths:
-                        await scanner_subtitles.delete_path(path)
+                    for s in (scanner, scanner_subtitles):
+                        paths = await s.get_paths_matching_base_path(path)
+                        for path in paths:
+                            await s.delete_path(path)
         except Exception as e:
             logger.exception(e)
         
