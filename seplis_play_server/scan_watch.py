@@ -22,17 +22,17 @@ async def main():
                 if path.lower().startswith(str(scan.path).lower()):
                     scan_info = scan
                     break
+
             # if the file is being written it will trigger a change event multiple times
             # so we try and wait for the file to be written before parsing it.
             if path in files_waiting_to_finish:
-                files_waiting_to_finish[path].cancel()
-                files_waiting_to_finish.pop(path)
-                
+                files_waiting_to_finish[path].cancel()                
             files_waiting_to_finish[path] = asyncio.create_task(parse(
                 path=path, 
                 change=change,
                 scan_info=scan_info,
             ))
+
     w.cancel()
 
 def get_scanner(scan: ConfigPlayScanModel, type_=None) -> Play_scan:
@@ -103,7 +103,7 @@ async def worker(queue: asyncio.Queue):
 
 async def parse(path: str, change: Change, scan_info: ConfigPlayScanModel):
     # wait so we don't execute for the same file multiple times within a short time
-    # in case the file is being written.
+    # incase the file is being written.
     if change in (Change.added, Change.modified):
         await asyncio.sleep(3)
     files_waiting_to_finish.pop(path, None)
