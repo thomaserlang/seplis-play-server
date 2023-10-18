@@ -116,7 +116,7 @@ class Episode_scan(Play_scan):
 
                     logger.info(f'[episode-{item.series_id}-{item.episode_number}] Saved {path}')
                 except Exception as e:
-                    logger.error(str(e))
+                    logger.exception(f'[episode-{item.series_id}-{item.episode_number}]: {str(e)}')
             else:                
                 logger.debug(f'[episode-{item.series_id}-{item.episode_number}] Nothing changed for {path}')
             if self.make_thumbnails:

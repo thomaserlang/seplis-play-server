@@ -1,3 +1,4 @@
+import asyncio
 import os, os.path, subprocess
 from datetime import datetime, timezone
 from seplis_play_server import config, utils, logger
@@ -66,21 +67,21 @@ class Play_scan:
         ffprobe = os.path.join(config.ffmpeg_folder, 'ffprobe')
         if not os.path.exists(ffprobe):
             raise Exception(f'ffprobe not found in "{config.ffmpeg_folder}"')
+        logger.debug(f'Getting metadata from: {path}')
         cmd = [
-            ffprobe,
             '-show_streams',
             '-show_format',
-            '-loglevel', 'quiet',
+            '-loglevel', 'error',
             '-print_format', 'json',
             path,
         ]
-        process = subprocess.Popen(
-            cmd,
+        process = await asyncio.create_subprocess_exec(
+            ffprobe,
+            *cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        data = process.stdout.read()
-        error = process.stderr.read()
+        data, error = await process.communicate()
         if error:        
             if isinstance(error, bytes):
                 error = error.decode('utf-8')   
@@ -90,7 +91,44 @@ class Play_scan:
         if isinstance(data, bytes):
             data = data.decode('utf-8')
         data = utils.json_loads(data)
+        if config.extract_keyframes and path.endswith('.mkv'):
+            data['keyframes'] = await self.get_keyframes(path)
         return data
+    
+
+    async def get_keyframes(self, path):
+        if not os.path.exists(path):
+            raise Exception(f'Path "{path}" does not exist')
+        ffprobe = os.path.join(config.ffmpeg_folder, 'ffprobe')
+        if not os.path.exists(ffprobe):
+            raise Exception(f'ffprobe not found in "{config.ffmpeg_folder}"')
+        logger.debug(f'Getting keyframes from: {path}')
+        cmd = [
+            '-loglevel', 'error',
+            '-skip_frame', 'nokey',
+            '-show_entries', 'packet=pts_time,flags',
+            '-select_streams', 'v',
+            '-of', 'json',
+            path,
+        ]
+        process = await asyncio.create_subprocess_exec(
+            ffprobe,
+            *cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        data, error = await process.communicate()
+        if error:        
+            if isinstance(error, bytes):
+                error = error.decode('utf-8')   
+            raise Exception(f'FFprobe error: {error}')
+        if not data:
+            raise Exception(f'Failed to get keyframes from {path}, either this is not a media file or it is corrupt.')
+        if isinstance(data, bytes):
+            data = data.decode('utf-8')
+        data = utils.json_loads(data)
+        keyframes = [r['pts_time'] for r in data['packets'] if r['flags'].startswith('K')]
+        return keyframes
 
 
     def get_file_modified_time(self, path):
@@ -110,7 +148,6 @@ class Play_scan:
         os.mkdir(thumb)
         logger.info(f'[{key}] Creating thumbnails')
         cmd = [
-            os.path.join(config.ffmpeg_folder, 'ffmpeg'),
             '-vsync', '0',
             '-i', path,
             '-vf', 'fps=1/60,scale=320:-2',
@@ -119,12 +156,13 @@ class Play_scan:
             '-vcodec', 'libwebp',
             os.path.join(thumb, '%d.webp')
         ]
-        process = subprocess.Popen(
-            cmd,
+        process = await asyncio.create_subprocess_exec(
+            os.path.join(config.ffmpeg_folder, 'ffmpeg'),
+            *cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        output, err = process.communicate()
+        output, err = await process.communicate()
         if process.returncode > 0:
             os.rmdir(thumb)
             logger.error(err)

@@ -37,6 +37,7 @@ class ConfigModel(BaseSettings):
     ffmpeg_hwaccel: str = 'qsv'
     ffmpeg_hwaccel_low_powermode = True
     ffmpeg_tonemap_enabled = True
+    extract_keyframes = True
 
     port = 8003
     transcode_folder: pathlib.Path = os.path.join(tempfile.gettempdir(), 'seplis_play')
