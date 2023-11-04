@@ -1,20 +1,20 @@
 import jwt
 from sqlalchemy import select
 from fastapi import HTTPException
-from seplis_play_server import database, models
+from seplis_play_server import database, logger, models, schemas
 from seplis_play_server import config
 
 
 async def get_metadata(play_id) -> list[dict]:
     data = decode_play_id(play_id)
-    if data['type'] == 'series':
+    if data.type == 'series':
         query = select(models.Episode.meta_data).where(
-            models.Episode.series_id == data['series_id'],
-            models.Episode.number == data['number'],
+            models.Episode.series_id == data.series_id,
+            models.Episode.number == data.number,
         )
-    elif data['type'] == 'movie':
+    elif data.type == 'movie':
         query = select(models.Movie.meta_data).where(
-            models.Movie.movie_id == data['movie_id'],
+            models.Movie.movie_id == data.movie_id,
         )
     else:
         raise HTTPException(400, 'Play id type not supported')
@@ -30,6 +30,7 @@ def decode_play_id(play_id: str):
             config.secret,
             algorithms=['HS256'],
         )
-        return data
-    except Exception as e:
+        return schemas.Play_id.model_validate(data)
+    except jwt.PyJWTError as e:
+        logger.error(f'Failed to decode play id: {e}')
         raise HTTPException(400, 'Play id invalid')
