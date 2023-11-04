@@ -6,7 +6,16 @@ from seplis_play_server.config import config
 set_logger(f'play-server-{config.port}.log')
 
 from .database import database
-from .routes import health, sources, thumbnails, keep_alive, subtitle_file, transcode, close_session
+from .routes import (
+    health, 
+    sources, 
+    thumbnails, 
+    keep_alive, 
+    subtitle_file, 
+    transcode, 
+    close_session,
+    download_source,
+)
 
 app = FastAPI(
     title='SEPLIS Play Server'
@@ -25,6 +34,7 @@ app.include_router(keep_alive.router)
 app.include_router(subtitle_file.router)
 app.include_router(transcode.router)
 app.include_router(close_session.router)
+app.include_router(download_source.router)
 app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
 
 @app.on_event('startup')

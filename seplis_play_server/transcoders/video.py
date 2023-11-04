@@ -72,7 +72,6 @@ class Transcoder:
         self.ffmpeg_args = None
         self.transcode_folder = None
         
-
     async def start(self, send_data_callback=None) -> bool | bytes:
         self.transcode_folder = self.create_transcode_folder()
         if self.settings.session in sessions:
@@ -83,7 +82,7 @@ class Transcoder:
         await self.set_ffmpeg_args()
         
         args = to_subprocess_arguments(self.ffmpeg_args)
-        logger.debug(f'FFmpeg start args: {" ".join(args)}')
+        logger.debug(f'[{self.settings.session}] FFmpeg start args: {" ".join(args)}')
         self.process = await asyncio.create_subprocess_exec(
             os.path.join(config.ffmpeg_folder, 'ffmpeg'),
             *args,
@@ -146,7 +145,7 @@ class Transcoder:
         ]
         self.set_hardware_decoder()
         if self.settings.start_time:
-            self.ffmpeg_args.append({'-ss': str(self.settings.start_time or 0)})
+            self.ffmpeg_args.append({'-ss': str(self.closest_keyframe(self.settings.start_time))})
         self.ffmpeg_args.extend([
             {'-autorotate': '0'},
             {'-i': self.metadata['format']['filename']},
@@ -159,6 +158,15 @@ class Transcoder:
         self.set_video()
         self.set_audio()
         self.ffmpeg_extend_args()
+
+    def closest_keyframe(self, time: float):
+        if not self.metadata.get('keyframes'):
+            logger.debug(f'[{self.settings.session}] No keyframes in metadata')
+            return time
+        keyframes = [float(r) for r in self.metadata['keyframes']]
+        corrected_time = keyframes[min(range(len(keyframes)), key = lambda i: abs(keyframes[i]-time))]
+        logger.debug(f'[{self.settings.session}] Closest keyframe for {time}: {corrected_time}')
+        return corrected_time
 
     def set_hardware_decoder(self):
         if not config.ffmpeg_hwaccel_enabled:
@@ -222,15 +230,19 @@ class Transcoder:
 
     def can_copy_video(self):
         if self.input_codec not in self.settings.supported_video_codecs:
+            logger.debug(f'[{self.settings.session}] Input codec not supported: {self.input_codec}')
             return False
         
         if self.video_color_bit_depth > self.settings.supported_video_color_bit_depth:
+            logger.debug(f'[{self.settings.session}] Video color bit depth not supported: {self.video_color_bit_depth}')
             return False
         
         if self.video_color.range == 'hdr' and self.video_color.range_type not in self.settings.supported_hdr_formats and config.ffmpeg_tonemap_enabled:
+            logger.debug(f'[{self.settings.session}] HDR format not supported: {self.video_color.range_type}')
             return False
 
         if self.settings.width and self.settings.width < self.video_stream['width']:
+            logger.debug(f'[{self.settings.session}] Requested width is lower than input width ({self.settings.width} < {self.video_stream["width"]})')
             return False
 
         return True

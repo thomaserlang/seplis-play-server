@@ -28,6 +28,7 @@ class Source_model(BaseModel):
     video_color_bit_depth: int
     video_color_range: str
     video_color_range_type: str
+    size: int | None = None
 
 @router.get('/sources', response_model=list[Source_model])
 async def get_sources(metadata = Depends(get_metadata)):
@@ -49,6 +50,7 @@ async def get_sources(metadata = Depends(get_metadata)):
             video_color_range_type=color_range.range_type,
             resolution=resolution_text(width=video['width'], height=video['height']),
             index=i,
+            size=metad['format']['size'],
         )
         data.append(d)
         for stream in metad['streams']:
@@ -78,7 +80,6 @@ async def get_sources(metadata = Depends(get_metadata)):
 async def fill_external_subtitles(filename, subtitles: list[Source_stream_model]):
     async with database.session() as session:
         filename = filename.rsplit('.', 1)[0]
-        logger.info(filename)
         results = await session.scalars(sa.select(models.External_subtitle).where(
             models.External_subtitle.path.like(f'{filename}.%'),
         ))

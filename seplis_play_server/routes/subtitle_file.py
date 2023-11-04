@@ -14,6 +14,8 @@ async def download_subtitle(
 ):    
     if not metadata:
         raise HTTPException(404, 'No metadata')
+    if source_index >= len(metadata):
+        raise HTTPException(404, 'Source index not found')
     if int(lang.split(':')[1]) < 1000:
         sub = await get_subtitle_file(
             metadata=metadata[source_index], 

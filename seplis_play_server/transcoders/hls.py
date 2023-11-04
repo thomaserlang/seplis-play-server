@@ -1,5 +1,7 @@
 import asyncio, os
 from aiofile import async_open
+
+from seplis_play_server import logger
 from . import video
 
 class Hls_transcoder(video.Transcoder):
@@ -34,3 +36,23 @@ class Hls_transcoder(video.Transcoder):
             if files >= 1:
                 return True
             await asyncio.sleep(0.5)
+
+    async def write_hls_playlist(self) -> None:
+        l = []
+        l.append('#EXTM3U')
+        l.append('#EXT-X-VERSION:7')
+        l.append('#EXT-X-PLAYLIST-TYPE:VOD')
+        l.append(f'#EXT-X-TARGETDURATION:{str(self.segment_time())}')
+        l.append('#EXT-X-MEDIA-SEQUENCE:0')
+
+        # Keyframes is in self.metadata['keyframes']
+        
+        # Make the EXTINF lines
+        prev = 0.0
+        for i, t in enumerate(self.metadata['keyframes']):
+            l.append(f'#EXTINF:{str(t-prev)},')
+            l.append(f'media{i}.m4s')
+
+        logger.info(l)
+
+
