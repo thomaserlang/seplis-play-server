@@ -2,33 +2,37 @@ import os, asyncio, sys
 import shutil
 from fastapi import Query
 from typing import Dict, Literal, Optional, Annotated
-from pydantic import BaseModel, constr, conint, validator
+from pydantic import BaseModel, ConfigDict, constr, conint, field_validator
+from pydantic.dataclasses import dataclass
 from seplis_play_server import config, logger
 
-class Transcode_settings(BaseModel):
+@dataclass
+class Transcode_settings:
     play_id: constr(min_length=1)
     session: constr(min_length=1)
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
-    supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
-    supported_video_color_bit_depth: conint(ge=8) = 10
     format: Literal['pipe', 'hls', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
 
-    start_time: Optional[int] | constr(max_length=0)
-    audio_lang: Optional[str]
-    audio_channels: Optional[int] | constr(max_length=0)
-    width: Optional[int] | constr(max_length=0)
-    video_bitrate: Optional[int] | constr(max_length=0)
-    client_width: Optional[int] | constr(max_length=0)
-
-    @validator('supported_video_codecs', 'supported_audio_codecs', 'supported_hdr_formats', pre=True)
+    supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
+    supported_video_color_bit_depth: conint(ge=8) = 10
+    start_time: Optional[int] | constr(max_length=0) = None
+    audio_lang: Optional[str] = None
+    audio_channels: Optional[int] | constr(max_length=0) = None
+    width: Optional[int] | constr(max_length=0) = None
+    video_bitrate: Optional[int] | constr(max_length=0) = None
+    client_width: Optional[int] | constr(max_length=0) = None
+   
+    @field_validator('supported_video_codecs', 'supported_audio_codecs', 'supported_hdr_formats')
+    @classmethod
     def comma_string(cls, v):
         l = []
         for a in v:
             l.extend([s.strip() for s in a.split(',')])
         return l
+    
 
 class Video_color(BaseModel):
     range: str
@@ -36,11 +40,12 @@ class Video_color(BaseModel):
 
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
-    transcode_folder: Optional[str]
+    transcode_folder: Optional[str] = None
     call_later: asyncio.TimerHandle
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
 
 sessions: Dict[str, Session_model] = {}
 

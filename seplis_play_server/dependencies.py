@@ -16,12 +16,14 @@ async def get_metadata(play_id) -> list[dict]:
         query = select(models.Movie.meta_data).where(
             models.Movie.movie_id == data['movie_id'],
         )
+    else:
+        raise HTTPException(400, 'Play id type not supported')
     async with database.session() as session:
         r = await session.scalars(query)
-        return r.all()
+        return list(r.all())
 
 
-def decode_play_id(play_id: str) -> list[dict]:
+def decode_play_id(play_id: str):
     try:
         data = jwt.decode(
             play_id,

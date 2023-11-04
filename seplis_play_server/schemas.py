@@ -1,18 +1,18 @@
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, ConfigDict, conint
 from pydantic.generics import GenericModel
-from typing import TypeVar, Generic
-from datetime import datetime, date
+from typing import Literal, TypeVar, Generic
+import datetime
 
 
 class Play_server_episode_create(BaseModel):
     series_id: int
     episode_number: conint(ge=1)
-    created_at: datetime
+    created_at: datetime.datetime
 
 
 class Play_server_movie_create(BaseModel):
     movie_id: int
-    created_at: datetime
+    created_at: datetime.datetime
 
 
 T = TypeVar('T')
@@ -23,23 +23,36 @@ class Page_cursor_result(GenericModel, Generic[T]):
     cursor: str | None = None
 
 
-class Episode(BaseModel, orm_mode=True):
-    title: str | None
-    original_title: str | None
+class Episode(BaseModel):
+    title: str | None = None
+    original_title: str | None = None
     number: int
-    season: int | None
-    episode: int | None
-    air_date: date | None
-    air_datetime: datetime | None
-    plot: str | None
-    runtime: int | None
-    rating: float | None
+    season: int | None = None
+    episode: int | None = None
+    air_date: datetime.date | None = None
+    air_datetime: datetime.datetime | None = None
+    plot: str | None = None
+    runtime: int | None = None
+    rating: float | None = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class Parsed_file_episode(BaseModel):
-    series_id: int | None
-    episode_number: int | None
-    season: int | None
-    episode: int | None
-    date: date | None
-    title: str | None
+    series_id: int | None = None
+    episode_number: int | None = None
+    season: int | None = None
+    episode: int | None = None
+    date: datetime.date | None = None
+    title: str | None = None
+
+
+class Play_id(BaseModel):
+    # only allow series and movie
+    type: Literal['series', 'movie']
+    movie_id: int | None = None
+    series_id: int | None = None
+    number: int | None = None
+    exp: int

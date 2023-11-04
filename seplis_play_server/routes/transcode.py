@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 
-from seplis_play_server import logger
 from ..dependencies import get_metadata
 from ..transcoders.video import Transcode_settings, Transcoder
-from ..transcoders import dash, pipe, hls
+from ..transcoders import dash, hls
 
 router = APIRouter()
 

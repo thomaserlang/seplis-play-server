@@ -1,9 +1,9 @@
 import orjson
 from pydantic import BaseModel
 
-def default(obj):
+def default(obj: BaseModel):
     if isinstance(obj, BaseModel):
-        return obj.dict()
+        return obj.model_dump()
     raise TypeError
 
 def json_dumps(obj):
