@@ -1,5 +1,4 @@
 from pydantic import BaseModel, ConfigDict, conint
-from pydantic.generics import GenericModel
 from typing import Literal, TypeVar, Generic
 import datetime
 
@@ -18,7 +17,7 @@ class Play_server_movie_create(BaseModel):
 T = TypeVar('T')
 
 
-class Page_cursor_result(GenericModel, Generic[T]):
+class Page_cursor_result(BaseModel, Generic[T]):
     items: list[T]
     cursor: str | None = None
 
