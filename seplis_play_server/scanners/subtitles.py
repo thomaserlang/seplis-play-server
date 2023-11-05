@@ -11,7 +11,7 @@ from seplis_play_server import logger
 class Subtitle_scan(Play_scan):
 
     SCANNER_NAME = 'Subtitles'
-    SUPPORETD_EXTS = config.subtitle_types
+    SUPPORTED_EXTS = config.subtitle_types
 
     async def save_item(self, item, path):
         if not os.path.exists(path):

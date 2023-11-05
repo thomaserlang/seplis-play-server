@@ -16,7 +16,6 @@ class Play_scan:
         self.cleanup_mode = cleanup_mode
         self.parser = parser
 
-
     async def save_item(self, item, path):
         raise NotImplementedError()
 
