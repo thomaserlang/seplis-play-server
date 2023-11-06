@@ -7,6 +7,7 @@ class Play_scan:
 
     SCANNER_NAME = 'Unnamed scanner'
     SUPPORTED_EXTS = config.media_types
+    _cached_paths = {}
 
     def __init__(self, scan_path: str, make_thumbnails: bool = False, cleanup_mode = False, parser = 'internal'):
         if not os.path.exists(scan_path):
@@ -37,24 +38,30 @@ class Play_scan:
                 await self.save_item(title, f)
 
     def get_files(self):
-        '''
-        Looks for files in the `self.scan_path` directory.
-        '''
         files = []
-        for dirname, dirnames, filenames in os.walk(self.scan_path):
-            for file_ in filenames:
-                info = os.path.splitext(file_)
-                if file_.startswith('._'):
-                    continue
-                if len(info) != 2:
-                    continue
-                if info[1][1:].lower() not in self.SUPPORTED_EXTS:
-                    continue
-                files.append(
-                    os.path.join(dirname, file_)
-                )
+        for dirname, file_ in self._get_files(self.scan_path):
+            info = os.path.splitext(file_)
+            if file_.startswith('._'):
+                continue
+            if len(info) != 2:
+                continue
+            if info[1][1:].lower() not in self.SUPPORTED_EXTS:
+                continue
+            files.append(
+                os.path.join(dirname, file_)
+            )
         return files
-
+    
+    def _get_files(self, scan_path) -> tuple[str, str]:
+        if scan_path in self._cached_paths:
+            for r in self._cached_paths[scan_path]:
+                yield r
+        else:
+            self._cached_paths[scan_path] = []
+            for dirname, _, filenames in os.walk(scan_path):
+                for file_ in filenames:
+                    self._cached_paths[scan_path].append((dirname, file_))
+                    yield (dirname, file_)
 
     async def get_metadata(self, path):
         '''
