@@ -138,7 +138,7 @@ class Play_scan:
         if isinstance(data, bytes):
             data = data.decode('utf-8')
         data = utils.json_loads(data)
-        keyframes = [r['pts_time'] for r in data['packets'] if r['flags'].startswith('K')]
+        keyframes = [r['pts_time'] for r in data['packets'] if r['flags'].startswith('K') and r.get('pts_time')]
         return keyframes
 
 
