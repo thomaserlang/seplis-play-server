@@ -124,12 +124,17 @@ class Play_scan:
             stderr=subprocess.PIPE,
         )
         data, error = await process.communicate()
+        
         if error:        
             if isinstance(error, bytes):
                 error = error.decode('utf-8')   
-            raise Exception(f'FFprobe error: {error}')
+            logger.error(f'FFprobe error: {error}')
+            return
+        
         if not data:
-            raise Exception(f'Failed to get keyframes from {path}, either this is not a media file or it is corrupt.')
+            logger.error(f'Failed to get keyframes from {path}, either this is not a media file or it is corrupt.')
+            return
+        
         if isinstance(data, bytes):
             data = data.decode('utf-8')
         data = utils.json_loads(data)
