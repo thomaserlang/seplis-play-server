@@ -49,9 +49,10 @@ class Session_model(BaseModel):
 
 sessions: Dict[str, Session_model] = {}
 
-codecs_to_libary = {
+codecs_to_library = {
     'h264': 'libx264',
     'hevc': 'libx265',
+    'av1': 'libaom-av1',
     'vp9': 'libvpx-vp9',
     'opus': 'libopus',
     'aac': 'libfdk_aac',
@@ -194,7 +195,7 @@ class Transcoder:
             ])
 
     def set_video(self):
-        codec = codecs_to_libary.get(self.settings.transcode_video_codec, self.settings.transcode_video_codec)
+        codec = codecs_to_library.get(self.settings.transcode_video_codec, self.settings.transcode_video_codec)
 
         self.ffmpeg_args.append({'-map_metadata': '-1'})
         self.ffmpeg_args.append({'-map_chapters': '-1'})
@@ -382,13 +383,13 @@ class Transcoder:
     def set_audio(self):
         index = self.stream_index_by_lang('audio', self.settings.audio_lang)
         stream = self.metadata['streams'][index.index]
-        codec = codecs_to_libary.get(stream['codec_name'], '')
+        codec = codecs_to_library.get(stream['codec_name'], '')
         
         if self.can_copy_audio(stream):
             codec = 'copy'
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
-                codec = codecs_to_libary.get(self.settings.transcode_audio_codec, '')
+                codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
             bitrate = stream.get('bit_rate', stream['channels'] * 128000)
             if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
                 bitrate = self.settings.audio_channels * 128000
@@ -397,7 +398,7 @@ class Transcoder:
                 self.ffmpeg_args.append({'-ac': stream['channels']})
             self.ffmpeg_args.append({'-ab': bitrate})
         if not codec:
-            raise Exception('No audio codec libary')
+            raise Exception('No audio codec library')
         self.ffmpeg_args.extend([
             {'-map': f'0:{index.index}'},
             {'-c:a': codec},
