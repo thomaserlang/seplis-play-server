@@ -151,7 +151,7 @@ class Transcoder:
         ]
         self.set_hardware_decoder()
         if self.settings.start_time:
-            self.ffmpeg_args.append({'-ss': str(self.closest_keyframe(self.settings.start_time))})
+            self.ffmpeg_args.append({'-ss': str(self.settings.start_time)})
         self.ffmpeg_args.extend([
             {'-autorotate': '0'},
             {'-i': self.metadata['format']['filename']},
