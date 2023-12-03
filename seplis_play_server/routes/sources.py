@@ -29,6 +29,8 @@ class Source_model(BaseModel):
     video_color_range: str
     video_color_range_type: str
     size: int | None = None
+    bit_rate: int | None = None
+    format: str | None = None
 
 @router.get('/sources', response_model=list[Source_model])
 async def get_sources(metadata = Depends(get_metadata)):
@@ -51,6 +53,8 @@ async def get_sources(metadata = Depends(get_metadata)):
             resolution=resolution_text(width=video['width'], height=video['height']),
             index=i,
             size=metad['format']['size'],
+            bit_rate=metad['format']['bit_rate'],
+            format=metad['format']['format_name'],
         )
         data.append(d)
         for stream in metad['streams']:
