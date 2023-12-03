@@ -15,6 +15,7 @@ from .routes import (
     transcode, 
     close_session,
     download_source,
+    request_media,
 )
 
 app = FastAPI(
@@ -35,6 +36,7 @@ app.include_router(subtitle_file.router)
 app.include_router(transcode.router)
 app.include_router(close_session.router)
 app.include_router(download_source.router)
+app.include_router(request_media.router)
 app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
 
 @app.on_event('startup')

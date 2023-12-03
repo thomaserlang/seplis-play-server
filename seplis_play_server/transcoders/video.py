@@ -18,14 +18,20 @@ class Transcode_settings:
 
     supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
     supported_video_color_bit_depth: conint(ge=8) = 10
-    start_time: Optional[int] | constr(max_length=0) = None
+    start_time: Optional[float] | constr(max_length=0) = None
     audio_lang: Optional[str] = None
     audio_channels: Optional[int] | constr(max_length=0) = None
     width: Optional[int] | constr(max_length=0) = None
-    video_bitrate: Optional[int] | constr(max_length=0) = None
+    max_video_bitrate: Optional[int] | constr(max_length=0) = None
     client_width: Optional[int] | constr(max_length=0) = None
-   
-    @field_validator('supported_video_codecs', 'supported_audio_codecs', 'supported_hdr_formats')
+    supported_video_containers: Annotated[list[constr(min_length=1)], Query()] = Query(default=['mp4'])
+       
+    @field_validator(
+        'supported_video_codecs', 
+        'supported_audio_codecs', 
+        'supported_hdr_formats', 
+        'supported_video_containers',
+    )
     @classmethod
     def comma_string(cls, v):
         l = []
@@ -165,7 +171,7 @@ class Transcoder:
         self.set_audio()
         self.ffmpeg_extend_args()
 
-    def closest_keyframe(self, time: float):
+    def closest_keyframe_time(self, time: float):
         if not self.metadata.get('keyframes'):
             logger.debug(f'[{self.settings.session}] No keyframes in metadata')
             return time
@@ -233,7 +239,6 @@ class Transcoder:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
-
     def can_copy_video(self):
         if self.input_codec not in self.settings.supported_video_codecs:
             logger.debug(f'[{self.settings.session}] Input codec not supported: {self.input_codec}')
@@ -250,9 +255,13 @@ class Transcoder:
         if self.settings.width and self.settings.width < self.video_stream['width']:
             logger.debug(f'[{self.settings.session}] Requested width is lower than input width ({self.settings.width} < {self.video_stream["width"]})')
             return False
+        
+        if self.settings.max_video_bitrate and self.settings.max_video_bitrate < int(self.metadata['format']['bit_rate'] or 0):
+            logger.debug(f'[{self.settings.session}] Requested max bitrate is lower than input bitrate ({self.settings.max_video_bitrate} < {self.get_video_transcode_bitrate()})')
+            return False
 
+        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.input_codec}')
         return True
-
 
     def get_video_filter(self, width: int):
         vf = []        
@@ -303,7 +312,6 @@ class Transcoder:
 
         return vf
 
-
     def get_tonemap_hardware_filter(self):
         if config.ffmpeg_hwaccel in ('qsv', 'vaapi'):
             qsv_extra = ':extra_hw_frames=16' if config.ffmpeg_hwaccel == 'qsv' else ''
@@ -331,7 +339,6 @@ class Transcoder:
             return not config.ffmpeg_hwaccel_enabled or config.ffmpeg_hwaccel in ('qsv', 'vaapi')
         
         return self.video_color.range == 'hdr' and (self.video_color.range_type in ('hdr10', 'hlg'))
-
 
     def get_quality_params(self, width: int, codec: str):
         params = []
@@ -379,13 +386,12 @@ class Transcoder:
         params.extend(self.get_video_bitrate_params(codec))
         return params
 
-
     def set_audio(self):
         index = self.stream_index_by_lang('audio', self.settings.audio_lang)
         stream = self.metadata['streams'][index.index]
         codec = codecs_to_library.get(stream['codec_name'], '')
         
-        if self.can_copy_audio(stream):
+        if self.can_copy_video() and self.can_copy_audio(stream):
             codec = 'copy'
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
@@ -404,19 +410,24 @@ class Transcoder:
             {'-c:a': codec},
         ])
 
-    def can_copy_audio(self, stream: dict):
-        return False
+    def can_copy_audio(self, stream: dict = None):
+        if not stream:
+            index = self.stream_index_by_lang('audio', self.settings.audio_lang)
+            stream = self.metadata['streams'][index.index]
+
         if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
+            logger.debug(f'[{self.settings.session}] Requested audio channels is lower than input channels ({self.settings.audio_channels} < {stream["channels"]})')
             return False
             
         if stream['codec_name'] not in self.settings.supported_audio_codecs:
+            logger.debug(f'[{self.settings.session}] Input audio codec not supported: {stream["codec_name"]}')
             return False
 
+        logger.debug(f'[{self.settings.session}] Can copy audio, codec: {stream["codec_name"]}')
         return True
 
-
     def get_video_bitrate_params(self, codec: str):
-        bitrate = self.get_video_bitrate()
+        bitrate = self.get_video_transcode_bitrate()
 
         if codec in ('libx264', 'libx265', 'libvpx-vp9'):
             return [
@@ -430,8 +441,8 @@ class Transcoder:
             {'-bufsize': bitrate*2},
         ]
 
-    def get_video_bitrate(self):
-        bitrate = self.settings.video_bitrate or int(self.metadata['format']['bit_rate'] or 0)
+    def get_video_transcode_bitrate(self):
+        bitrate = self.settings.max_video_bitrate or int(self.metadata['format']['bit_rate'] or 0)
 
         if bitrate:
             upscaling = self.settings.width and self.settings.width > self.video_stream['width']
@@ -442,8 +453,8 @@ class Transcoder:
             bitrate = self._video_scale_bitrate(bitrate, self.input_codec, self.settings.transcode_video_codec)
             
             # don't exceed the requested bitrate
-            if self.settings.video_bitrate:
-                bitrate = min(bitrate, self.settings.video_bitrate)
+            if self.settings.max_video_bitrate:
+                bitrate = min(bitrate, self.settings.max_video_bitrate)
 
         # Make sure when calculating the bufsize (bitrate * 2) that it doesn't exceed the maxsize
         return min(bitrate or 0, sys.maxsize / 2)
@@ -476,7 +487,6 @@ class Transcoder:
         elif bitrate <= 3000000:
             scale_factor = max(scale_factor, 2)
         return int(scale_factor * bitrate)
-
 
     def stream_index_by_lang(self, codec_type: str, lang: str):
         return stream_index_by_lang(self.metadata, codec_type, lang)

@@ -5,6 +5,12 @@ from seplis_play_server import logger
 from . import video
 
 class Hls_transcoder(video.Transcoder):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # For now force h264 for hls hevc breaks in safari for some reason
+        self.settings.transcode_video_codec = 'h264'
+        self.settings.supported_video_codecs = ['h264']
     
     def ffmpeg_extend_args(self) -> None:
         self.ffmpeg_args.extend([
