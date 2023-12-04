@@ -27,14 +27,12 @@ async def request_media(
     for key in settings_dict:
         if isinstance(settings_dict[key], list):
             settings_dict[key] = ','.join(settings_dict[key])
-    can_copy_video = t.can_copy_video()
-    if 'start_time' in settings_dict and can_copy_video:
-        settings_dict['start_time'] = t.closest_keyframe_time(settings.start_time)
+    can_device_direct_play = t.can_device_direct_play()
     format_supported = any(fmt in settings.supported_video_containers \
                            for fmt in metadata[source_index]['format']['format_name'].split(','))
     return Request_media(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
-        can_direct_play=format_supported and can_copy_video and t.can_copy_audio(),
+        can_direct_play=format_supported and can_device_direct_play and t.can_copy_audio(),
         transcode_url=f'/transcode?source_index={source_index}&{urlencode(settings_dict)}',
-        transcode_start_time=settings_dict.get('start_time', 0),
+        transcode_start_time=t.closest_keyframe_time(settings.start_time),
     )

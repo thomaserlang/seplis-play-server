@@ -18,7 +18,7 @@ class Transcode_settings:
 
     supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
     supported_video_color_bit_depth: conint(ge=8) = 10
-    start_time: Optional[float] | constr(max_length=0) = None
+    start_time: Optional[float] | constr(max_length=0) = 0
     audio_lang: Optional[str] = None
     audio_channels: Optional[int] | constr(max_length=0) = None
     width: Optional[int] | constr(max_length=0) = None
@@ -176,7 +176,12 @@ class Transcoder:
             logger.debug(f'[{self.settings.session}] No keyframes in metadata')
             return time
         keyframes = [float(r) for r in self.metadata['keyframes']]
-        corrected_time = keyframes[min(range(len(keyframes)), key = lambda i: abs(keyframes[i]-time))]
+        corrected_time = 0
+        for t in keyframes:
+            logger.info(f'[{self.settings.session}] Keyframe: {t}')
+            if t > time:
+                break
+            corrected_time = t
         logger.debug(f'[{self.settings.session}] Closest keyframe for {time}: {corrected_time}')
         return corrected_time
 
@@ -240,6 +245,19 @@ class Transcoder:
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
     def can_copy_video(self):
+        if not self.can_device_direct_play():
+            return False
+            
+        # We need the key frames to determin the actually start time when seeking 
+        # otherwise the subtitles will be out of sync
+        if not self.metadata.get('keyframes'):
+            logger.debug(f'[{self.settings.session}] No key frames in metadata')
+            return False
+
+        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.input_codec}')
+        return True
+    
+    def can_device_direct_play(self):        
         if self.input_codec not in self.settings.supported_video_codecs:
             logger.debug(f'[{self.settings.session}] Input codec not supported: {self.input_codec}')
             return False
@@ -259,8 +277,7 @@ class Transcoder:
         if self.settings.max_video_bitrate and self.settings.max_video_bitrate < int(self.metadata['format']['bit_rate'] or 0):
             logger.debug(f'[{self.settings.session}] Requested max bitrate is lower than input bitrate ({self.settings.max_video_bitrate} < {self.get_video_transcode_bitrate()})')
             return False
-
-        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.input_codec}')
+        
         return True
 
     def get_video_filter(self, width: int):
@@ -355,7 +372,7 @@ class Transcoder:
         elif codec == 'libx265':
             params.extend([
                 {'-tag:v': 'hvc1'},
-                {'-x265-params': 'keyint=24:min-keyint=24'},
+                {'-x265-params:0': 'no-info=1'},
             ])
             if width >= 3840:
                 params.append({'-crf': 18})
@@ -403,7 +420,7 @@ class Transcoder:
                 self.ffmpeg_args.append({'-ac': self.settings.audio_channels})
             else:
                 self.ffmpeg_args.append({'-ac': stream['channels']})
-            self.ffmpeg_args.append({'-ab': bitrate})
+            self.ffmpeg_args.append({'-b:a': bitrate})
         if not codec:
             raise Exception('No audio codec library')
         self.ffmpeg_args.extend([
