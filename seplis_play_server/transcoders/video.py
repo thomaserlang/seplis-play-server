@@ -391,6 +391,7 @@ class Transcoder:
         stream = self.metadata['streams'][index.index]
         codec = codecs_to_library.get(stream['codec_name'], '')
         
+        # Audio goes out of sync audio copy is used while the video is being transcoded
         if self.can_copy_video() and self.can_copy_audio(stream):
             codec = 'copy'
         else:
