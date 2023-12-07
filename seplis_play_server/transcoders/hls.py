@@ -14,7 +14,6 @@ class Hls_transcoder(video.Transcoder):
     
     def ffmpeg_extend_args(self) -> None:
         self.ffmpeg_args.extend([
-            *self.keyframe_params(),
             {'-f': 'hls'},
             {'-hls_playlist_type': 'event'},
             {'-hls_segment_type': 'fmp4'},
