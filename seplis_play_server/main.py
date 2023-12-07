@@ -37,6 +37,9 @@ app.include_router(transcode.router)
 app.include_router(close_session.router)
 app.include_router(download_source.router)
 app.include_router(request_media.router)
+
+# The media.m3u8 gets updated too fast and the browser gets an old version
+StaticFiles.is_not_modified = lambda *args, **kwargs: False
 app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
 
 @app.on_event('startup')
