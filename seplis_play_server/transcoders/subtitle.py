@@ -5,7 +5,7 @@ from aiofile import async_open
 from seplis_play_server import config, logger, models, database
 from .video import stream_index_by_lang, to_subprocess_arguments
 
-async def get_subtitle_file(metadata: Dict, lang: str, start_time: int):
+async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
     if not lang:
         return
     sub_index = stream_index_by_lang(metadata, 'subtitle', lang)
@@ -14,7 +14,6 @@ async def get_subtitle_file(metadata: Dict, lang: str, start_time: int):
     args = [
         {'-analyzeduration': '200M'},
         {'-probesize': '200M'},
-        {'-ss': str(start_time)},
         {'-i': metadata['format']['filename']},
         {'-y': None},
         {'-vn': None},
@@ -36,10 +35,10 @@ async def get_subtitle_file(metadata: Dict, lang: str, start_time: int):
     if process.returncode != 0:
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
-    return stdout
+    return stdout if not offset else offset_webvtt(stdout, offset)
 
 
-async def get_subtitle_file_from_external(id_: int, start_time: int):
+async def get_subtitle_file_from_external(id_: int, offset: int):
     
     async with database.session() as session:
         sub_metadata = await session.scalar(sa.select(models.External_subtitle).where(
@@ -50,7 +49,8 @@ async def get_subtitle_file_from_external(id_: int, start_time: int):
         return None
     
     if sub_metadata.path.endswith('.vtt'):
-        return await get_subtitle_file_from_vtt(sub_metadata.path)
+        vtt = await get_subtitle_file_from_vtt(sub_metadata.path)
+        return vtt if not offset else offset_webvtt(vtt, offset)
     
     if not os.path.exists(sub_metadata.path):
         logger.warning(f'Subtitle file could not be found: {sub_metadata.path}')
@@ -59,7 +59,6 @@ async def get_subtitle_file_from_external(id_: int, start_time: int):
     args = [
         {'-analyzeduration': '200M'},
         {'-probesize': '200M'},
-        {'-ss': str(start_time)},
         {'-i': sub_metadata.path},
         {'-y': None},
         {'-vn': None},
@@ -80,7 +79,9 @@ async def get_subtitle_file_from_external(id_: int, start_time: int):
     if process.returncode != 0:
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
-    return stdout
+    
+    logger.info(offset)
+    return stdout if not offset else offset_webvtt(stdout, offset)
 
 
 async def get_subtitle_file_from_vtt(path: str):    
@@ -90,3 +91,35 @@ async def get_subtitle_file_from_vtt(path: str):
             logger.warning(f'Subtitle file could not be found: {path}')
             return None
         return data
+
+
+def offset_webvtt(webvtt_content, offset_seconds):
+    lines = webvtt_content.split('\n')
+    output_lines = []
+    for line in lines:
+        if '-->' in line:
+            times = line.split(' --> ')
+            if len(times) == 2:
+                start_time, end_time = times
+                try:
+                    start_seconds = sum(float(x) * 60 ** index for index, x in enumerate(reversed(start_time.split(':'))))
+                    end_seconds = sum(float(x) * 60 ** index for index, x in enumerate(reversed(end_time.split(':'))))
+                    new_start = start_seconds + offset_seconds
+                    new_end = end_seconds + offset_seconds
+
+                    new_start_formatted = '{:02d}:{:02d}:{:06.3f}'.format(int(new_start // 3600),
+                                                                           int((new_start % 3600) // 60),
+                                                                           new_start % 60)
+                    new_end_formatted = '{:02d}:{:02d}:{:06.3f}'.format(int(new_end // 3600),
+                                                                         int((new_end % 3600) // 60),
+                                                                         new_end % 60)
+
+                    output_lines.append(f"{new_start_formatted} --> {new_end_formatted}")
+                except ValueError:
+                    output_lines.append(line)
+            else:
+                output_lines.append(line)
+        else:
+            output_lines.append(line)
+
+    return '\n'.join(output_lines)
