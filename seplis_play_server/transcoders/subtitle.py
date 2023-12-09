@@ -3,7 +3,7 @@ import sqlalchemy as sa
 from typing import Dict
 from aiofile import async_open
 from seplis_play_server import config, logger, models, database
-from .video import stream_index_by_lang, subprocess_env, to_subprocess_arguments
+from .video import stream_index_by_lang, to_subprocess_arguments
 
 async def get_subtitle_file(metadata: Dict, lang: str, start_time: int):
     if not lang:

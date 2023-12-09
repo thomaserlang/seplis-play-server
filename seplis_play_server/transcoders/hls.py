@@ -28,6 +28,7 @@ class Hls_transcoder(video.Transcoder):
             {'-hls_time': str(self.segment_time())},
             {'-hls_list_size': '0'},
             {'-start_number': str(self.settings.start_segment or 0)},
+            {'-y': None},
             {self.media_path: None},
         ])
 
@@ -100,7 +101,7 @@ class Hls_transcoder(video.Transcoder):
         return '\n'.join(l)
     
     def get_segments(self):
-        if self.can_copy_video():
+        if self.can_copy_video:
             return self.calculate_keyframe_segments()
         else:
             return self.calculate_equal_segments()

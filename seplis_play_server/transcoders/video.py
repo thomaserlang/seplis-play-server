@@ -92,6 +92,8 @@ class Transcoder:
         self.input_codec = self.video_stream['codec_name']
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
+        self.can_device_direct_play = self.get_can_device_direct_play()
+        self.can_copy_video = self.get_can_copy_video()
         self.output_codec_lib = None
         self.ffmpeg_args = None
         self.transcode_folder = None
@@ -182,10 +184,6 @@ class Transcoder:
             {'-map_metadata': '-1'},
             {'-map_chapters': '-1'},
             {'-threads': '0'},
-            {'-start_at_zero': None},
-            #{'-copyts': None},
-            {'-avoid_negative_ts': 'disabled'},
-            {'-muxdelay': '0'},
             {'-max_delay': '5000000'},
             {'-max_muxing_queue_size': '2048'},
         ])
@@ -209,6 +207,9 @@ class Transcoder:
     def set_hardware_decoder(self):
         if not config.ffmpeg_hwaccel_enabled:
             return
+        
+        if self.can_copy_video:
+            return
 
         if config.ffmpeg_hwaccel == 'qsv':
             self.ffmpeg_args.extend([
@@ -229,12 +230,23 @@ class Transcoder:
     def set_video(self):
         codec = codecs_to_library.get(self.settings.transcode_video_codec, self.settings.transcode_video_codec)
 
-        if self.can_copy_video():
+        if self.can_copy_video:
             codec = 'copy'
-            self.ffmpeg_args.insert(0, {'-noaccurate_seek': None})
+            if self.settings.start_time > 0:
+                i = self.find_ffmpeg_arg_index('-ss')
+                # Audio goes out if sync
+                self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
+
+                self.ffmpeg_args.insert(i+2, {'-fflags': '+genpts'})
+
+                self.ffmpeg_args.extend([
+                    {'-start_at_zero': None},
+                    {'-avoid_negative_ts': 'disabled'},
+                ])
         else:
             if config.ffmpeg_hwaccel_enabled:
                 codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
+
         self.output_codec_lib = codec
         self.ffmpeg_args.extend([
             {'-map': '0:v:0'},
@@ -261,8 +273,8 @@ class Transcoder:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
-    def can_copy_video(self):
-        if not self.can_device_direct_play():
+    def get_can_copy_video(self):
+        if not self.can_device_direct_play:
             return False
             
         # We need the key frames to determin the actually start time when seeking 
@@ -274,7 +286,7 @@ class Transcoder:
         logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.input_codec}')
         return True
     
-    def can_device_direct_play(self):        
+    def get_can_device_direct_play(self):
         if self.input_codec not in self.settings.supported_video_codecs:
             logger.debug(f'[{self.settings.session}] Input codec not supported: {self.input_codec}')
             return False
@@ -296,7 +308,7 @@ class Transcoder:
             return False
         
         return True
-
+        
     def get_video_filter(self, width: int):
         vf = []        
         if self.video_color_bit_depth <= self.settings.supported_video_color_bit_depth:
@@ -425,10 +437,9 @@ class Transcoder:
         stream = self.metadata['streams'][index.index]
         codec = codecs_to_library.get(stream['codec_name'], '')
         
-        # Audio goes out of sync audio copy is used while the video is being transcoded
-        if self.can_copy_video() and self.can_copy_audio(stream):
+        # Audio goes out of sync if audio copy is used while the video is being transcoded
+        if self.can_copy_video and self.can_copy_audio(stream):
             codec = 'copy'
-            self.ffmpeg_args.insert(5, {'-noaccurate_seek': None})
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
                 codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
@@ -541,6 +552,11 @@ class Transcoder:
                 a[key] = new_value
                 break
 
+    def find_ffmpeg_arg_index(self, key):
+        for i, a in enumerate(self.ffmpeg_args):
+            if key in a:
+                return i
+
     def create_transcode_folder(self):
         transcode_folder = os.path.join(config.transcode_folder, self.settings.session)
         if not os.path.exists(transcode_folder):
@@ -548,7 +564,7 @@ class Transcoder:
         return transcode_folder
 
     def segment_time(self):
-        return 6 if self.can_copy_video() else 3
+        return 6 if self.get_can_copy_video() else 3
 
 
 def subprocess_env(session, type_):
