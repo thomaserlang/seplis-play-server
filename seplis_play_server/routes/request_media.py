@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel
 from urllib.parse import urlencode
 from ..transcoders.video import Transcode_settings, Transcoder
 from ..dependencies import get_metadata
@@ -10,7 +10,6 @@ class Request_media(BaseModel):
     direct_play_url: str
     can_direct_play: bool
     transcode_url: str
-    transcode_start_time: float
 
 @router.get('/request-media', response_model=Request_media)
 async def request_media(
@@ -23,16 +22,11 @@ async def request_media(
     
     t = Transcoder(settings=settings, metadata=metadata[source_index])
 
-    settings_dict = RootModel[Transcode_settings](settings).model_dump(exclude_none=True, exclude_unset=True)
-    for key in settings_dict:
-        if isinstance(settings_dict[key], list):
-            settings_dict[key] = ','.join(settings_dict[key])
     can_device_direct_play = t.can_device_direct_play()
     format_supported = any(fmt in settings.supported_video_containers \
                            for fmt in metadata[source_index]['format']['format_name'].split(','))
     return Request_media(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
         can_direct_play=format_supported and can_device_direct_play and t.can_copy_audio(),
-        transcode_url=f'/transcode?source_index={source_index}&{urlencode(settings_dict)}',
-        transcode_start_time=t.closest_keyframe_time(settings.start_time),
+        transcode_url=f'/hls/media.m3u8?{urlencode(settings.to_args_dict())}',
     )

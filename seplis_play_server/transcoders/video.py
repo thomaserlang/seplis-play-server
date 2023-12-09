@@ -1,3 +1,4 @@
+from decimal import Decimal
 import os, asyncio, sys
 import shutil
 from fastapi import Query
@@ -8,8 +9,10 @@ from seplis_play_server import config, logger
 
 @dataclass
 class Transcode_settings:
+    source_index: int
     play_id: constr(min_length=1)
     session: constr(min_length=1)
+    source_index: int
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
     format: Literal['pipe', 'hls', 'dash']
@@ -18,7 +21,8 @@ class Transcode_settings:
 
     supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
     supported_video_color_bit_depth: conint(ge=8) = 10
-    start_time: Optional[float] | constr(max_length=0) = 0
+    start_time: Optional[Decimal] | constr(max_length=0) = 0
+    start_segment: Optional[int] | constr(max_length=0) = None
     audio_lang: Optional[str] = None
     audio_channels: Optional[int] | constr(max_length=0) = None
     width: Optional[int] | constr(max_length=0) = None
@@ -38,6 +42,14 @@ class Transcode_settings:
         for a in v:
             l.extend([s.strip() for s in a.split(',')])
         return l
+    
+    def to_args_dict(self):
+        from pydantic import RootModel
+        settings_dict = RootModel[Transcode_settings](self).model_dump(exclude_none=True, exclude_unset=True)
+        for key in settings_dict:
+            if isinstance(settings_dict[key], list):
+                settings_dict[key] = ','.join(settings_dict[key])
+        return settings_dict
     
 
 class Video_color(BaseModel):
@@ -86,11 +98,7 @@ class Transcoder:
         
     async def start(self, send_data_callback=None) -> bool | bytes:
         self.transcode_folder = self.create_transcode_folder()
-        if self.settings.session in sessions:
-            try:
-                return await asyncio.wait_for(self.wait_for_media(), timeout=5)
-            except asyncio.TimeoutError:
-                return False
+
         await self.set_ffmpeg_args()
         
         args = to_subprocess_arguments(self.ffmpeg_args)
@@ -140,16 +148,27 @@ class Transcoder:
 
     def register_session(self):
         loop = asyncio.get_event_loop()
-        logger.info(f'[{self.settings.session}] Registered')
-        sessions[self.settings.session] = Session_model(
-            process=self.process,
-            transcode_folder=self.transcode_folder,
-            call_later=loop.call_later(
+        if self.settings.session in sessions:
+            close_transcoder(self.settings.session)
+            logger.info(f'[{self.settings.session}] Reregistered')
+            sessions[self.settings.session].process = self.process
+            sessions[self.settings.session].call_later.cancel()
+            sessions[self.settings.session].call_later = loop.call_later(
                 config.session_timeout,
                 close_session_callback,
                 self.settings.session
-            ),
-        )
+            )
+        else:
+            logger.info(f'[{self.settings.session}] Registered')
+            sessions[self.settings.session] = Session_model(
+                process=self.process,
+                transcode_folder=self.transcode_folder,
+                call_later=loop.call_later(
+                    config.session_timeout,
+                    close_session_callback,
+                    self.settings.session
+                ),
+            )
 
     async def set_ffmpeg_args(self):
         self.ffmpeg_args = [            
@@ -159,13 +178,16 @@ class Transcoder:
         if self.settings.start_time:
             self.ffmpeg_args.append({'-ss': str(self.settings.start_time)})
         self.ffmpeg_args.extend([
-            {'-autorotate': '0'},
-            {'-i': self.metadata['format']['filename']},
-            {'-y': None},
-            {'-copyts': None},
+            {'-i': f"file:{self.metadata['format']['filename']}"},
+            {'-map_metadata': '-1'},
+            {'-map_chapters': '-1'},
+            {'-threads': '0'},
             {'-start_at_zero': None},
+            #{'-copyts': None},
             {'-avoid_negative_ts': 'disabled'},
             {'-muxdelay': '0'},
+            {'-max_delay': '5000000'},
+            {'-max_muxing_queue_size': '2048'},
         ])
         self.set_video()
         self.set_audio()
@@ -178,7 +200,6 @@ class Transcoder:
         keyframes = [float(r) for r in self.metadata['keyframes']]
         corrected_time = 0
         for t in keyframes:
-            logger.info(f'[{self.settings.session}] Keyframe: {t}')
             if t > time:
                 break
             corrected_time = t
@@ -207,10 +228,6 @@ class Transcoder:
 
     def set_video(self):
         codec = codecs_to_library.get(self.settings.transcode_video_codec, self.settings.transcode_video_codec)
-
-        self.ffmpeg_args.append({'-map_metadata': '-1'})
-        self.ffmpeg_args.append({'-map_chapters': '-1'})
-        self.ffmpeg_args.append({'-threads': '0'})
 
         if self.can_copy_video():
             codec = 'copy'
@@ -411,6 +428,7 @@ class Transcoder:
         # Audio goes out of sync audio copy is used while the video is being transcoded
         if self.can_copy_video() and self.can_copy_audio(stream):
             codec = 'copy'
+            self.ffmpeg_args.insert(5, {'-noaccurate_seek': None})
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
                 codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
@@ -530,7 +548,7 @@ class Transcoder:
         return transcode_folder
 
     def segment_time(self):
-        return 6 if self.output_codec_lib == 'copy' else 3
+        return 6 if self.can_copy_video() else 3
 
 
 def subprocess_env(session, type_):
@@ -626,18 +644,17 @@ def stream_index_by_lang(metadata: Dict, codec_type:str, lang: str):
 
 
 def close_session_callback(session):
+    logger.debug(f'[{session}] Session timeout reached')
     close_session(session)
 
 
 def close_session(session):
-    logger.info(f'[{session}] Closing')
     if session not in sessions:
+        logger.info(f'[{session}] Already closed')
         return
+    logger.info(f'[{session}] Closing')
+    close_transcoder(session)
     s = sessions[session]
-    try:
-        s.process.kill()
-    except:
-        pass
     try:
         if s.transcode_folder:
             if os.path.exists(s.transcode_folder):
@@ -648,3 +665,10 @@ def close_session(session):
         pass          
     s.call_later.cancel()
     del sessions[session]
+
+
+def close_transcoder(session):
+    try:
+        sessions[session].process.kill()
+    except:
+        pass

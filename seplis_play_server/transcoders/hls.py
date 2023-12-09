@@ -1,24 +1,33 @@
 import asyncio, os
+import math
+import re
+from urllib.parse import urlencode
+from decimal import Decimal
 from aiofile import async_open
+import anyio
 
 from seplis_play_server import logger
 from . import video
 
 class Hls_transcoder(video.Transcoder):
 
+    media_name: str = 'media.m3u8'
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # For now force h264 for hls hevc breaks in safari for some reason
+        # For now force h264 since hls hevc breaks in safari for some reason
         self.settings.transcode_video_codec = 'h264'
         self.settings.supported_video_codecs = ['h264']
     
     def ffmpeg_extend_args(self) -> None:
         self.ffmpeg_args.extend([
+            *self.keyframe_params(),
             {'-f': 'hls'},
             {'-hls_playlist_type': 'event'},
             {'-hls_segment_type': 'fmp4'},
             {'-hls_time': str(self.segment_time())},
             {'-hls_list_size': '0'},
+            {'-start_number': str(self.settings.start_segment or 0)},
             {self.media_path: None},
         ])
 
@@ -26,41 +35,117 @@ class Hls_transcoder(video.Transcoder):
     def media_path(self) -> str:
         return os.path.join(self.transcode_folder, self.media_name)
 
-    @property
-    def media_name(self) -> str:
-        return 'media.m3u8'
-
     async def wait_for_media(self):
-        files = 0
+        await self.wait_for_segment(
+            self.transcode_folder, 
+            self.settings.start_segment or 0,
+        )
 
-        while True:
-            if os.path.exists(self.media_path):
-                async with async_open(self.media_path, "r") as afp:
-                    async for line in afp:
-                        if not '#' in line:
-                            files += 1   
-            if files >= 1:
-                return True
-            await asyncio.sleep(0.5)
+    @classmethod
+    async def wait_for_segment(cls, transcode_folder: str, segment: str | int):
+        async def wait_for():
+            while True:
+                if await cls.is_segment_ready(transcode_folder, segment):
+                    return True
+                await asyncio.sleep(0.1)
+        try:
+            return await asyncio.wait_for(wait_for(), timeout=10)
+        except asyncio.TimeoutError:
+            logger.error(f'[{transcode_folder}] Timeout waiting for segment {segment}')
+            return False
 
-    async def write_hls_playlist(self) -> None:
+    @classmethod
+    async def first_last_transcoded_segment(cls, transcode_folder: str):
+        f = os.path.join(transcode_folder, cls.media_name)
+        first, last = (0, 0)
+        if await anyio.to_thread.run_sync(os.path.exists, f):
+            async with async_open(f, "r") as afp:
+                async for line in afp:
+                    if not '#' in line:
+                        m = re.search(r'(\d+)\.m4s', line)
+                        last = int(m.group(1))
+                        if not first:
+                            first = last
+        else:
+            logger.debug(f'No media file {f}')
+        return (first, last)
+    
+    @classmethod
+    async def is_segment_ready(cls, transcode_folder: str, segment: int):
+        return await anyio.to_thread.run_sync(
+            os.path.exists, 
+            cls.get_segment_path(transcode_folder, segment)
+        )
+    
+    @staticmethod
+    def get_segment_path(transcode_folder: str, segment: int):
+        return os.path.join(transcode_folder, f'media{segment}.m4s')
+
+    def generate_hls_playlist(self):
+        settings_dict = self.settings.to_args_dict()
+        url_settings = urlencode(settings_dict)
+        segments = self.get_segments()
         l = []
         l.append('#EXTM3U')
         l.append('#EXT-X-VERSION:7')
         l.append('#EXT-X-PLAYLIST-TYPE:VOD')
-        l.append(f'#EXT-X-TARGETDURATION:{str(self.segment_time())}')
+        l.append(f'#EXT-X-TARGETDURATION:{round(max(segments)) if len(segments) > 0 else str(self.segment_time())}')
         l.append('#EXT-X-MEDIA-SEQUENCE:0')
+        l.append(f'#EXT-X-MAP:URI="/hls/init.mp4?{url_settings}"')
 
-        # Keyframes is in self.metadata['keyframes']
+        for i, segment_time in enumerate(segments):
+            l.append(f'#EXTINF:{str(segment_time)}, nodesc')
+            l.append(f'/hls/media{i}.m4s?{url_settings}')
+        l.append('#EXT-X-ENDLIST')
+        return '\n'.join(l)
+    
+    def get_segments(self):
+        if self.can_copy_video():
+            return self.calculate_keyframe_segments()
+        else:
+            return self.calculate_equal_segments()
+
+    def calculate_keyframe_segments(self):
+        result: list[Decimal] = []
+        target_duration = Decimal(self.segment_time())
+        keyframes = [Decimal(t) for t in self.metadata['keyframes']]
+        break_time = target_duration
+        prev_keyframe = Decimal(0)
+        for keyframe in keyframes:
+            if keyframe >= break_time:
+                result.append(keyframe - prev_keyframe)
+                prev_keyframe = keyframe
+                break_time += target_duration
+        result.append(Decimal(self.metadata['format']['duration']) - prev_keyframe)
+        return result
+
+    def calculate_equal_segments(self):
+        target_duration = Decimal(self.segment_time())
+        duration = Decimal(self.metadata['format']['duration'])
+        segments = duration / target_duration
+        left_over = duration % target_duration
+        result = [target_duration for _ in range(int(segments))]
+        if left_over:
+            result.append(left_over)
+        return result
+    
+    def start_time_from_segment(self, segment: int) -> Decimal:
+        segments = self.get_segments()
+        if segment >= len(segments) or segment < 1:
+            return Decimal(0)
+        return sum(segments[:segment])
+    
+    def start_segment_from_start_time(self, start_time: Decimal) -> int:
+        if start_time <= 0:
+            return 0
+        segments = self.get_segments()
+        time = Decimal(0)
+        for i, t in enumerate(segments):
+            time += t
+            if time > start_time:
+                return i
+        return 0
         
-        # Make the EXTINF lines
-        prev = 0.0
-        for i, t in enumerate(self.metadata['keyframes']):
-            l.append(f'#EXTINF:{str(t-prev)},')
-            l.append(f'media{i}.m4s')
-
-        logger.info(l)
-
     def keyframe_params(self) -> list[dict]:
         if self.output_codec_lib == 'copy':
             return []
@@ -69,12 +154,11 @@ class Hls_transcoder(video.Transcoder):
         keyframe_args = [
             {'-force_key_frames:0': f'expr:gte(t,n_forced*{self.segment_time()})'},
         ]
-
         if self.video_stream.get('r_frame_rate'):
             r_frame_rate = self.video_stream['r_frame_rate'].split('/')
-            r_frame_rate = int(r_frame_rate[0]) / int(r_frame_rate[1])
+            r_frame_rate = Decimal(r_frame_rate[0]) / Decimal(r_frame_rate[1])
 
-            v = self.segment_time() * r_frame_rate
+            v = math.ceil(Decimal(self.segment_time()) * r_frame_rate)
             go_args.extend([
                 {'-g:v:0': str(v)},
                 {'-keyint_min:v:0': str(v)},

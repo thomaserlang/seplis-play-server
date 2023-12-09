@@ -12,8 +12,8 @@ async def get_subtitle_file(metadata: Dict, lang: str, start_time: int):
     if not sub_index:
         return
     args = [
-        {'-analyzeduration': '20000000'},
-        {'-probesize': '20000000'},
+        {'-analyzeduration': '200M'},
+        {'-probesize': '200M'},
         {'-ss': str(start_time)},
         {'-i': metadata['format']['filename']},
         {'-y': None},
@@ -57,8 +57,8 @@ async def get_subtitle_file_from_external(id_: int, start_time: int):
         return None
 
     args = [
-        {'-analyzeduration': '20000000'},
-        {'-probesize': '20000000'},
+        {'-analyzeduration': '200M'},
+        {'-probesize': '200M'},
         {'-ss': str(start_time)},
         {'-i': sub_metadata.path},
         {'-y': None},
