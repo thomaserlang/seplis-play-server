@@ -243,7 +243,7 @@ class Transcoder:
                 self.ffmpeg_args.extend([
                     {'-start_at_zero': None},
                     {'-avoid_negative_ts': 'disabled'},
-                    {'-copyts': None},
+                    #{'-copyts': None},
                 ])
         else:
             if config.ffmpeg_hwaccel_enabled:
