@@ -382,7 +382,7 @@ class Transcoder:
             return False
         
         if self.input_codec == 'hevc' and self.video_color.range == 'hdr' and self.video_color.range_type == 'dovi':
-            return not config.ffmpeg_hwaccel_enabled or config.ffmpeg_hwaccel in ('qsv', 'vaapi')
+            return config.ffmpeg_hwaccel in ('qsv', 'vaapi')
         
         return self.video_color.range == 'hdr' and (self.video_color.range_type in ('hdr10', 'hlg'))
 
