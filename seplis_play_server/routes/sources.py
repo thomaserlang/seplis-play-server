@@ -12,7 +12,7 @@ class Source_stream_model(BaseModel):
     title: str | None
     language: str | None
     index: int
-    group_index: int | None
+    group_index: int | None = None
     codec: str | None
     default: bool = False
     forced: bool = False
@@ -74,7 +74,7 @@ async def get_sources(metadata = Depends(get_metadata)):
                 forced=stream.get('disposition', {}).get('forced', 0) == 1,
             )
             if stream['codec_type'] == 'audio':
-                d.group_index = len(d.audio)
+                s.group_index = len(d.audio)
                 d.audio.append(s)
             elif stream['codec_type'] == 'subtitle':
                 if stream['codec_name'] not in ('dvd_subtitle', 'hdmv_pgs_subtitle'):
