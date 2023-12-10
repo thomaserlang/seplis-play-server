@@ -81,7 +81,8 @@ async def get_subtitle_file_from_external(id_: int, offset: int):
     if process.returncode != 0:
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
-    return stdout if not offset else offset_webvtt(stdout, offset)
+    v = stdout.decode('utf-8')
+    return v if not offset else offset_webvtt(v, offset)
 
 
 async def get_subtitle_file_from_vtt(path: str):    
