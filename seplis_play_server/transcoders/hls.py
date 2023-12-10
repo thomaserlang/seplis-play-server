@@ -1,3 +1,4 @@
+from ast import Dict
 import asyncio, os
 import math
 import re
@@ -13,11 +14,11 @@ class Hls_transcoder(video.Transcoder):
 
     media_name: str = 'media.m3u8'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, settings: video.Transcode_settings, metadata: Dict):
         # For now force h264 since hls hevc breaks in safari for some reason
-        self.settings.transcode_video_codec = 'h264'
-        self.settings.supported_video_codecs = ['h264']
+        settings.transcode_video_codec = 'h264'
+        settings.supported_video_codecs = ['h264']
+        super().__init__(settings, metadata)
     
     def ffmpeg_extend_args(self) -> None:
         self.ffmpeg_args.extend([
