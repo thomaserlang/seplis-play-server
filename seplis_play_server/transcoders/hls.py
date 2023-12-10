@@ -15,9 +15,9 @@ class Hls_transcoder(video.Transcoder):
     media_name: str = 'media.m3u8'
 
     def __init__(self, settings: video.Transcode_settings, metadata: Dict):
-        # For now force h264 since hls hevc breaks in safari for some reason
-        settings.transcode_video_codec = 'h264'
-        settings.supported_video_codecs = ['h264']
+        if settings.transcode_video_codec not in ('h264', 'hevc'):
+            settings.transcode_video_codec = 'h264'
+        settings.supported_video_codecs = ['h264', 'hevc']
         super().__init__(settings, metadata)
     
     def ffmpeg_extend_args(self) -> None:

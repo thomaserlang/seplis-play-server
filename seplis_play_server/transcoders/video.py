@@ -95,6 +95,7 @@ class Transcoder:
         self.can_device_direct_play = self.get_can_device_direct_play()
         self.can_copy_video = self.get_can_copy_video()
         self.output_codec_lib = None
+        self.output_codec = self.input_codec if self.can_copy_video else self.settings.transcode_video_codec
         self.ffmpeg_args = None
         self.transcode_folder = None
         
@@ -228,7 +229,7 @@ class Transcoder:
             ])
 
     def set_video(self):
-        codec = codecs_to_library.get(self.settings.transcode_video_codec, self.settings.transcode_video_codec)
+        codec = codecs_to_library.get(self.output_codec, self.output_codec)
 
         if self.can_copy_video:
             codec = 'copy'
@@ -236,11 +237,13 @@ class Transcoder:
                 i = self.find_ffmpeg_arg_index('-ss')
                 # Audio goes out if sync if not used
                 self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
-
+                
                 self.ffmpeg_args.insert(i+2, {'-fflags': '+genpts'})
+
                 self.ffmpeg_args.extend([
                     {'-start_at_zero': None},
                     {'-avoid_negative_ts': 'disabled'},
+                    {'-copyts': None},
                 ])
         else:
             if config.ffmpeg_hwaccel_enabled:
@@ -251,6 +254,15 @@ class Transcoder:
             {'-map': '0:v:0'},
             {'-c:v': codec},
         ])
+
+        if self.output_codec == 'hevc':
+            if self.can_copy_video and \
+                    self.video_color.range_type == 'dovi' and \
+                    self.video_stream.get('codec_tag_string') in ('dovi', 'dvh1', 'dvhe'):
+                self.ffmpeg_args.append({'-tag:v': 'dvh1'})
+                self.ffmpeg_args.append({'-strict': '2'})
+            else:
+                self.ffmpeg_args.append({'-tag:v': 'hvc1'})
 
         if codec == 'copy':
             return
@@ -385,10 +397,10 @@ class Transcoder:
         
         return self.video_color.range == 'hdr' and (self.video_color.range_type in ('hdr10', 'hlg'))
 
-    def get_quality_params(self, width: int, codec: str):
+    def get_quality_params(self, width: int, codec_library: str):
         params = []
         params.append({'-preset': config.ffmpeg_preset})
-        if codec == 'libx264':
+        if codec_library == 'libx264':
             params.append({'-x264opts': 'subme=0:me_range=4:rc_lookahead=10:me=hex:8x8dct=0:partitions=none'})
             if width >= 3840:
                 params.append({'-crf': 18})
@@ -397,9 +409,8 @@ class Transcoder:
             else:
                 params.append({'-crf': 26})
                 
-        elif codec == 'libx265':
+        elif codec_library == 'libx265':
             params.extend([
-                {'-tag:v': 'hvc1'},
                 {'-x265-params:0': 'no-info=1'},
             ])
             if width >= 3840:
@@ -411,7 +422,7 @@ class Transcoder:
             else:
                 params.append({'-crf': 31})
 
-        elif codec == 'libvpx-vp9':
+        elif codec_library == 'libvpx-vp9':
             params.append({'-g': '24'})
             if width >= 3840:
                 params.append({'-crf': 15})
@@ -422,13 +433,10 @@ class Transcoder:
             else:
                 params.append({'-crf': 34})
 
-        elif codec  == 'h264_qsv':
+        elif codec_library  == 'h264_qsv':
             params.append({'-look_ahead': '0'})
-            
-        elif codec == 'hevc_qsv':
-            params.append({'-tag:v': 'hvc1'})
 
-        params.extend(self.get_video_bitrate_params(codec))
+        params.extend(self.get_video_bitrate_params(codec_library))
         return params
 
     def set_audio(self):
@@ -472,10 +480,10 @@ class Transcoder:
         logger.debug(f'[{self.settings.session}] Can copy audio, codec: {stream["codec_name"]}')
         return True
 
-    def get_video_bitrate_params(self, codec: str):
+    def get_video_bitrate_params(self, codec_library: str):
         bitrate = self.get_video_transcode_bitrate()
 
-        if codec in ('libx264', 'libx265', 'libvpx-vp9'):
+        if codec_library in ('libx264', 'libx265', 'libvpx-vp9'):
             return [
                 {'-maxrate': bitrate},
                 {'-bufsize': bitrate*2},
