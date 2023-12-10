@@ -25,14 +25,20 @@ class Hls_transcoder(video.Transcoder):
         self.ffmpeg_args.extend([
             *self.keyframe_params(),
             {'-f': 'hls'},
-            {'-hls_playlist_type': 'event'},
+            {'-hls_playlist_type': 'vod'},
             {'-hls_segment_type': 'fmp4'},
             {'-hls_time': str(self.segment_time())},
             {'-hls_list_size': '0'},
             {'-start_number': str(self.settings.start_segment or 0)},
             {'-y': None},
-            {self.media_path: None},
         ])
+
+        if self.output_codec == 'h264':
+            self.ffmpeg_args.append({'-bsf:v': 'h264_mp4toannexb'})
+        elif self.output_codec == 'hevc':
+            self.ffmpeg_args.append({'-bsf:v': 'hevc_mp4toannexb'})
+
+        self.ffmpeg_args.append({self.media_path: None})
 
     @property
     def media_path(self) -> str:

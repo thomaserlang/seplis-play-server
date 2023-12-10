@@ -177,6 +177,8 @@ class Transcoder:
         self.ffmpeg_args = [            
             {'-analyzeduration': '200M'},
         ]
+        if self.can_copy_video:
+            self.ffmpeg_args.append({'-fflags': '+genpts'})
         self.set_hardware_decoder()
         if self.settings.start_time:
             self.ffmpeg_args.append({'-ss': str(self.settings.start_time)})
@@ -237,13 +239,11 @@ class Transcoder:
                 i = self.find_ffmpeg_arg_index('-ss')
                 # Audio goes out if sync if not used
                 self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
-                
-                self.ffmpeg_args.insert(i+2, {'-fflags': '+genpts'})
 
                 self.ffmpeg_args.extend([
                     {'-start_at_zero': None},
                     {'-avoid_negative_ts': 'disabled'},
-                    #{'-copyts': None},
+                    {'-copyts': None},
                 ])
         else:
             if config.ffmpeg_hwaccel_enabled:
