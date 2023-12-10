@@ -184,6 +184,8 @@ class Transcoder:
             {'-map_metadata': '-1'},
             {'-map_chapters': '-1'},
             {'-threads': '0'},
+            {'-start_at_zero': None},
+            {'-avoid_negative_ts': 'disabled'},
             {'-max_delay': '5000000'},
             {'-max_muxing_queue_size': '2048'},
         ])
@@ -238,11 +240,6 @@ class Transcoder:
                 self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
 
                 self.ffmpeg_args.insert(i+2, {'-fflags': '+genpts'})
-
-                self.ffmpeg_args.extend([
-                    {'-start_at_zero': None},
-                    {'-avoid_negative_ts': 'disabled'},
-                ])
         else:
             if config.ffmpeg_hwaccel_enabled:
                 codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
