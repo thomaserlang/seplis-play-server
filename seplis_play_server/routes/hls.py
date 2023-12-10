@@ -6,7 +6,7 @@ from seplis_play_server import logger
 
 from .. import config
 from ..dependencies import get_metadata
-from ..transcoders.video import Transcode_settings, close_transcoder, sessions
+from ..transcoders.video import Transcode_settings, sessions
 from ..transcoders.hls import Hls_transcoder
 
 router = APIRouter()
@@ -41,7 +41,8 @@ async def get_media(
         
         # If the segment is within 15 segments of the last transcoded segment
         # then wait for the segment to be transcoded.
-        first_transcoded_segment, last_transcoded_segment = await Hls_transcoder.first_last_transcoded_segment(folder)
+        first_transcoded_segment, last_transcoded_segment = \
+            await Hls_transcoder.first_last_transcoded_segment(settings.session, folder)
         if first_transcoded_segment <= segment and (last_transcoded_segment + 15) >= segment:
             logger.debug(f'Requested segment {segment} is within the range {first_transcoded_segment}-{last_transcoded_segment+15} to wait for transcoding')
             if await Hls_transcoder.wait_for_segment(folder, segment):

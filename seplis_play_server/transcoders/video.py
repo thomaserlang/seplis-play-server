@@ -58,7 +58,8 @@ class Video_color(BaseModel):
 
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
-    transcode_folder: Optional[str] = None
+    transcode_folder: Optional[str] | None = None
+    start_segment: Optional[int] | None = None
     call_later: asyncio.TimerHandle
 
     model_config = ConfigDict(
@@ -237,7 +238,7 @@ class Transcoder:
             codec = 'copy'
             if self.settings.start_time > 0:
                 i = self.find_ffmpeg_arg_index('-ss')
-                # Audio goes out if sync if not used
+                # Audio goes out of sync if not used
                 self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
 
                 self.ffmpeg_args.extend([

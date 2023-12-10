@@ -1,10 +1,8 @@
-from ast import Dict
 import asyncio, os
 import math
 import re
 from urllib.parse import urlencode
 from decimal import Decimal
-from aiofile import async_open
 import anyio
 
 from seplis_play_server import logger
@@ -14,7 +12,7 @@ class Hls_transcoder(video.Transcoder):
 
     media_name: str = 'media.m3u8'
 
-    def __init__(self, settings: video.Transcode_settings, metadata: Dict):
+    def __init__(self, settings: video.Transcode_settings, metadata: dict):
         #if settings.transcode_video_codec not in ('h264', 'hevc'):
         settings.transcode_video_codec = 'h264'
         # Still issues with hevc
@@ -33,10 +31,11 @@ class Hls_transcoder(video.Transcoder):
             {'-y': None},
         ])
 
-        if self.output_codec == 'h264':
-            self.ffmpeg_args.append({'-bsf:v': 'h264_mp4toannexb'})
-        elif self.output_codec == 'hevc':
-            self.ffmpeg_args.append({'-bsf:v': 'hevc_mp4toannexb'})
+        if self.can_copy_video:
+            if self.output_codec == 'h264':
+                self.ffmpeg_args.append({'-bsf:v': 'h264_mp4toannexb'})
+            elif self.output_codec == 'hevc':
+                self.ffmpeg_args.append({'-bsf:v': 'hevc_mp4toannexb'})
 
         self.ffmpeg_args.append({self.media_path: None})
 
@@ -49,6 +48,7 @@ class Hls_transcoder(video.Transcoder):
             self.transcode_folder, 
             self.settings.start_segment or 0,
         )
+        video.sessions[self.settings.session].start_segment = self.settings.start_segment or 0
 
     @classmethod
     async def wait_for_segment(cls, transcode_folder: str, segment: str | int):
@@ -64,19 +64,21 @@ class Hls_transcoder(video.Transcoder):
             return False
 
     @classmethod
-    async def first_last_transcoded_segment(cls, transcode_folder: str):
-        first, last = (-1, 0)
+    async def first_last_transcoded_segment(cls, session: str, transcode_folder: str):
+        if session not in video.sessions:
+            return (0, 0)
+        first = video.sessions[session].start_segment or 0
+        last = first
+        segments: list[int] = []
         if await anyio.to_thread.run_sync(os.path.exists, transcode_folder):
             files = await anyio.to_thread.run_sync(os.listdir, transcode_folder)
             for f in files:
                 m = re.search(r'media(\d+)\.m4s', f)
                 if m:
-                    v = int(m.group(1))
-                    if v > last:
-                        last = v
-                    if v < first or first == -1:
-                        first = v
-                    first = int(m.group(1))
+                    segments.append(int(m.group(1)))
+            for s in sorted(segments):
+                if s > last and s - last == 1:
+                    last = s
         else:
             logger.debug(f'No media file {f}')
         return (first, last)
