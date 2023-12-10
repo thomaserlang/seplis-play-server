@@ -5,6 +5,7 @@ from aiofile import async_open
 from seplis_play_server import config, logger, models, database
 from .video import stream_index_by_lang, to_subprocess_arguments
 
+
 async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
     if not lang:
         return
@@ -35,7 +36,8 @@ async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
     if process.returncode != 0:
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
-    return stdout if not offset else offset_webvtt(stdout, offset)
+    v = stdout.decode('utf-8')
+    return v if not offset else offset_webvtt(v, offset)
 
 
 async def get_subtitle_file_from_external(id_: int, offset: int):
@@ -79,8 +81,6 @@ async def get_subtitle_file_from_external(id_: int, offset: int):
     if process.returncode != 0:
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
-    
-    logger.info(offset)
     return stdout if not offset else offset_webvtt(stdout, offset)
 
 
@@ -93,8 +93,8 @@ async def get_subtitle_file_from_vtt(path: str):
         return data
 
 
-def offset_webvtt(webvtt_content, offset_seconds):
-    lines = webvtt_content.split('\n')
+def offset_webvtt(content: str, offset: int):
+    lines = content.split('\n')
     output_lines = []
     for line in lines:
         if '-->' in line:
@@ -104,8 +104,8 @@ def offset_webvtt(webvtt_content, offset_seconds):
                 try:
                     start_seconds = sum(float(x) * 60 ** index for index, x in enumerate(reversed(start_time.split(':'))))
                     end_seconds = sum(float(x) * 60 ** index for index, x in enumerate(reversed(end_time.split(':'))))
-                    new_start = start_seconds + offset_seconds
-                    new_end = end_seconds + offset_seconds
+                    new_start = start_seconds + offset
+                    new_end = end_seconds + offset
 
                     new_start_formatted = '{:02d}:{:02d}:{:06.3f}'.format(int(new_start // 3600),
                                                                            int((new_start % 3600) // 60),
