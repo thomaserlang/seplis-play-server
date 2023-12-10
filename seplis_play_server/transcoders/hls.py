@@ -65,16 +65,18 @@ class Hls_transcoder(video.Transcoder):
 
     @classmethod
     async def first_last_transcoded_segment(cls, transcode_folder: str):
-        f = os.path.join(transcode_folder, cls.media_name)
-        first, last = (0, 0)
-        if await anyio.to_thread.run_sync(os.path.exists, f):
-            async with async_open(f, "r") as afp:
-                async for line in afp:
-                    if not '#' in line:
-                        m = re.search(r'(\d+)\.m4s', line)
-                        last = int(m.group(1))
-                        if not first:
-                            first = last
+        first, last = (-1, 0)
+        if await anyio.to_thread.run_sync(os.path.exists, transcode_folder):
+            files = await anyio.to_thread.run_sync(os.listdir, transcode_folder)
+            for f in files:
+                m = re.search(r'media(\d+)\.m4s', f)
+                if m:
+                    v = int(m.group(1))
+                    if v > last:
+                        last = v
+                    if v < first or first == -1:
+                        first = v
+                    first = int(m.group(1))
         else:
             logger.debug(f'No media file {f}')
         return (first, last)
