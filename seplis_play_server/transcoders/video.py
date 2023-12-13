@@ -111,8 +111,8 @@ class Transcoder:
             os.path.join(config.ffmpeg_folder, 'ffmpeg'),
             *args,
             env=subprocess_env(self.settings.session, 'transcode'),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
         self.register_session()
         
