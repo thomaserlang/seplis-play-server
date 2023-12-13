@@ -67,7 +67,7 @@ class Hls_transcoder(video.Transcoder):
     @classmethod
     async def first_last_transcoded_segment(cls, transcode_folder: str):
         f = os.path.join(transcode_folder, cls.media_name)
-        first, last = (0, 0)
+        first, last = (-1, -1)
         if await anyio.to_thread.run_sync(os.path.exists, f):
             async with async_open(f, "r") as afp:
                 async for line in afp:
@@ -83,10 +83,8 @@ class Hls_transcoder(video.Transcoder):
     
     @classmethod
     async def is_segment_ready(cls, transcode_folder: str, segment: int):
-        return await anyio.to_thread.run_sync(
-            os.path.exists, 
-            cls.get_segment_path(transcode_folder, segment)
-        )
+        _, last_segment = await cls.first_last_transcoded_segment(transcode_folder)
+        return last_segment >= segment
     
     @staticmethod
     def get_segment_path(transcode_folder: str, segment: int):
