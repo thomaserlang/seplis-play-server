@@ -3,6 +3,7 @@ import math
 import re
 from urllib.parse import urlencode
 from decimal import Decimal
+from aiofile import async_open
 import anyio
 
 from seplis_play_server import logger
@@ -23,7 +24,7 @@ class Hls_transcoder(video.Transcoder):
         self.ffmpeg_args.extend([
             *self.keyframe_params(),
             {'-f': 'hls'},
-            {'-hls_playlist_type': 'vod'},
+            {'-hls_playlist_type': 'event'},
             {'-hls_segment_type': 'fmp4'},
             {'-hls_time': str(self.segment_time())},
             {'-hls_list_size': '0'},
@@ -64,21 +65,18 @@ class Hls_transcoder(video.Transcoder):
             return False
 
     @classmethod
-    async def first_last_transcoded_segment(cls, session: str, transcode_folder: str):
-        if session not in video.sessions:
-            return (0, 0)
-        first = video.sessions[session].start_segment or 0
-        last = first
-        segments: list[int] = []
-        if await anyio.to_thread.run_sync(os.path.exists, transcode_folder):
-            files = await anyio.to_thread.run_sync(os.listdir, transcode_folder)
-            for f in files:
-                m = re.search(r'media(\d+)\.m4s', f)
-                if m:
-                    segments.append(int(m.group(1)))
-            for s in sorted(segments):
-                if s > last and s - last == 1:
-                    last = s
+    async def first_last_transcoded_segment(cls, transcode_folder: str):
+        f = os.path.join(transcode_folder, cls.media_name)
+        first, last = (0, 0)
+        if await anyio.to_thread.run_sync(os.path.exists, f):
+            async with async_open(f, "r") as afp:
+                async for line in afp:
+                    if not '#' in line:
+                        m = re.search(r'(\d+)\.m4s', line)
+                        if m:
+                            last = int(m.group(1))
+                            if not first:
+                                first = last
         else:
             logger.debug(f'No media file {f}')
         return (first, last)
