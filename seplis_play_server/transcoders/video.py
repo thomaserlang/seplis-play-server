@@ -190,8 +190,6 @@ class Transcoder:
             {'-threads': '0'},
             {'-max_delay': '5000000'},
             {'-max_muxing_queue_size': '2048'},
-            {'-muxdelay': '0'},
-            {'-muxpreload': '0'},
         ])
         self.set_video()
         self.set_audio()
@@ -246,7 +244,7 @@ class Transcoder:
             self.ffmpeg_args.extend([
                 {'-start_at_zero': None},
                 {'-avoid_negative_ts': 'disabled'},
-                {'-copyts': None},
+                #{'-copyts': None},
             ])
         else:
             if config.ffmpeg_hwaccel_enabled:
