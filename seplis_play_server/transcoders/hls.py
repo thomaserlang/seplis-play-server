@@ -105,7 +105,7 @@ class Hls_transcoder(video.Transcoder):
         l.append(f'#EXT-X-MAP:URI="/hls/init.mp4?{url_settings}"')
 
         for i, segment_time in enumerate(segments):
-            l.append(f'#EXTINF:{str(segment_time)}, nodesc')
+            l.append(f'#EXTINF:{str(segment_time)},')
             l.append(f'/hls/media{i}.m4s?{url_settings}')
         l.append('#EXT-X-ENDLIST')
         return '\n'.join(l)
