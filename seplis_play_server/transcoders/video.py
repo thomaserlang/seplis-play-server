@@ -182,7 +182,7 @@ class Transcoder:
             self.ffmpeg_args.append({'-fflags': '+genpts'})
         self.set_hardware_decoder()
         if self.settings.start_time:
-            self.ffmpeg_args.append({'-ss': str(self.settings.start_time)})
+            self.ffmpeg_args.append({'-ss': str(self.settings.start_time.quantize(Decimal('0.000')))})
         self.ffmpeg_args.extend([
             {'-i': f"file:{self.metadata['format']['filename']}"},
             {'-map_metadata': '-1'},
@@ -190,6 +190,8 @@ class Transcoder:
             {'-threads': '0'},
             {'-max_delay': '5000000'},
             {'-max_muxing_queue_size': '2048'},
+            {'-muxdelay': '0'},
+            {'-muxpreload': '0'},
         ])
         self.set_video()
         self.set_audio()
@@ -241,11 +243,11 @@ class Transcoder:
                 # Audio goes out of sync if not used
                 self.ffmpeg_args.insert(i+1, {'-noaccurate_seek': None})
 
-                self.ffmpeg_args.extend([
-                    {'-start_at_zero': None},
-                    {'-avoid_negative_ts': 'disabled'},
-                    #{'-copyts': None},
-                ])
+            self.ffmpeg_args.extend([
+                {'-start_at_zero': None},
+                {'-avoid_negative_ts': 'disabled'},
+                #{'-copyts': None},
+            ])
         else:
             if config.ffmpeg_hwaccel_enabled:
                 codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
