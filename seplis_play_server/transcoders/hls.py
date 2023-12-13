@@ -75,7 +75,7 @@ class Hls_transcoder(video.Transcoder):
                         m = re.search(r'(\d+)\.m4s', line)
                         if m:
                             last = int(m.group(1))
-                            if not first:
+                            if first < 1:
                                 first = last
         else:
             logger.debug(f'No media file {f}')
@@ -83,8 +83,8 @@ class Hls_transcoder(video.Transcoder):
     
     @classmethod
     async def is_segment_ready(cls, transcode_folder: str, segment: int):
-        _, last_segment = await cls.first_last_transcoded_segment(transcode_folder)
-        return last_segment >= segment
+        first_segment, last_segment = await cls.first_last_transcoded_segment(transcode_folder)
+        return segment >= first_segment and segment <= last_segment
     
     @staticmethod
     def get_segment_path(transcode_folder: str, segment: int):
