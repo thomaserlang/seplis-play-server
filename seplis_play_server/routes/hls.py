@@ -41,14 +41,15 @@ async def get_media(
         
         # If the segment is within 15 segments of the last transcoded segment
         # then wait for the segment to be transcoded.
+        wait_for_segments = 7
         first_transcoded_segment, last_transcoded_segment = \
             await Hls_transcoder.first_last_transcoded_segment(folder)
-        if first_transcoded_segment <= segment and (last_transcoded_segment + 7) >= segment:
-            logger.debug(f'Requested segment {segment} is within the range {first_transcoded_segment}-{last_transcoded_segment+15} to wait for transcoding')
+        if first_transcoded_segment <= segment and (last_transcoded_segment + wait_for_segments) >= segment:
+            logger.debug(f'Requested segment {segment} is within the range {first_transcoded_segment}-{last_transcoded_segment+wait_for_segments} to wait for transcoding')
             if await Hls_transcoder.wait_for_segment(folder, segment):
                 return FileResponse(Hls_transcoder.get_segment_path(folder, segment))
     
-        logger.debug(f'Requested segment {segment} is not within the range {first_transcoded_segment}-{last_transcoded_segment+15} to wait for transcoding, start a new transcoder')
+        logger.debug(f'Requested segment {segment} is not within the range {first_transcoded_segment}-{last_transcoded_segment+wait_for_segments} to wait for transcoding, start a new transcoder')
     else:
         logger.debug(f'Start new transcoder since the session does not exist')
 
