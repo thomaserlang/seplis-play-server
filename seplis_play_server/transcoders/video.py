@@ -59,7 +59,6 @@ class Video_color(BaseModel):
 class Session_model(BaseModel):
     process: asyncio.subprocess.Process
     transcode_folder: Optional[str] | None = None
-    start_segment: Optional[int] | None = None
     call_later: asyncio.TimerHandle
 
     model_config = ConfigDict(

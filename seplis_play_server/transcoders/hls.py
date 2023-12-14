@@ -49,7 +49,6 @@ class Hls_transcoder(video.Transcoder):
             self.transcode_folder, 
             self.settings.start_segment or 0,
         )
-        video.sessions[self.settings.session].start_segment = self.settings.start_segment or 0
 
     @classmethod
     async def wait_for_segment(cls, transcode_folder: str, segment: str | int):
