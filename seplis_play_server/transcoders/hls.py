@@ -74,7 +74,7 @@ class Hls_transcoder(video.Transcoder):
                         m = re.search(r'(\d+)\.m4s', line)
                         if m:
                             last = int(m.group(1))
-                            if first < 1:
+                            if first < 0:
                                 first = last
         else:
             logger.debug(f'No media file {f}')
