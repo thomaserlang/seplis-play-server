@@ -18,6 +18,10 @@ class Hls_transcoder(video.Transcoder):
         settings.transcode_video_codec = 'h264'
         # Still issues with hevc
         settings.supported_video_codecs = ['h264',]
+        if settings.format == 'hls.js':
+            # Find out if hls.js supports other that aac, e.g. eac3 doesn't work
+            settings.supported_audio_codecs = ['aac',]
+            settings.transcode_audio_codec = 'aac'
         super().__init__(settings, metadata)
     
     def ffmpeg_extend_args(self) -> None:

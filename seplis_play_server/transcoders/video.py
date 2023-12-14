@@ -15,7 +15,7 @@ class Transcode_settings:
     source_index: int
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
-    format: Literal['pipe', 'hls', 'dash']
+    format: Literal['pipe', 'hls', 'hls.js', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
 
@@ -243,7 +243,7 @@ class Transcoder:
             self.ffmpeg_args.extend([
                 {'-start_at_zero': None},
                 {'-avoid_negative_ts': 'disabled'},
-                #{'-copyts': None},
+                {'-copyts': None},
             ])
         else:
             if config.ffmpeg_hwaccel_enabled:
