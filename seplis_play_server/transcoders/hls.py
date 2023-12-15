@@ -37,9 +37,9 @@ class Hls_transcoder(video.Transcoder):
         ])
 
         if self.can_copy_video:
-            if self.output_codec == 'h264':
+            if self.video_output_codec == 'h264':
                 self.ffmpeg_args.append({'-bsf:v': 'h264_mp4toannexb'})
-            elif self.output_codec == 'hevc':
+            elif self.video_output_codec == 'hevc':
                 self.ffmpeg_args.append({'-bsf:v': 'hevc_mp4toannexb'})
 
         self.ffmpeg_args.append({self.media_path: None})
@@ -93,7 +93,7 @@ class Hls_transcoder(video.Transcoder):
     def get_segment_path(transcode_folder: str, segment: int):
         return os.path.join(transcode_folder, f'media{segment}.m4s')
 
-    def generate_hls_playlist(self):
+    def generate_media_playlist(self):
         settings_dict = self.settings.to_args_dict()
         url_settings = urlencode(settings_dict)
         segments = self.get_segments()
@@ -111,6 +111,29 @@ class Hls_transcoder(video.Transcoder):
         l.append('#EXT-X-ENDLIST')
         return '\n'.join(l)
     
+    def generate_main_playlist(self):
+        settings_dict = self.settings.to_args_dict()
+        url_settings = urlencode(settings_dict)
+        l = []
+        l.append('#EXTM3U')
+        l.append(f'#EXT-X-STREAM-INF:{self.get_stream_info_string()}')
+        l.append(f'media.m3u8?{url_settings}')
+        return '\n'.join(l)
+    
+    def get_stream_info_string(self):
+        info = []
+        video_bitrate = self.get_video_bitrate()
+        info.append(f'BANDWIDTH={video_bitrate}')
+        info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
+        if self.can_copy_video:
+            info.append(f'VIDEO-RANGE={self.video_color.range}')
+        else:
+            info.append('VIDEO-RANGE=SDR')
+        codecs = self.get_codecs_string()
+        if codecs:
+            info.append(f'CODECS="{",".join(codecs)}"')
+        return ','.join(info)
+
     def get_segments(self):
         if self.can_copy_video:
             return self.calculate_keyframe_segments()
@@ -159,7 +182,7 @@ class Hls_transcoder(video.Transcoder):
         return 0
         
     def keyframe_params(self) -> list[dict]:
-        if self.output_codec_lib == 'copy':
+        if self.video_output_codec_lib == 'copy':
             return []
         args = []
         go_args = []
@@ -177,7 +200,7 @@ class Hls_transcoder(video.Transcoder):
             ])
 
         # Jellyfin: Unable to force key frames using these encoders, set key frames by GOP.
-        if self.output_codec_lib in (
+        if self.video_output_codec_lib in (
             'h264_qsv',
             'h264_nvenc',
             'h264_amf',
@@ -189,7 +212,7 @@ class Hls_transcoder(video.Transcoder):
             'libsvtav1',
         ):
             args.extend(go_args)
-        elif self.output_codec_lib in (
+        elif self.video_output_codec_lib in (
             'libx264',
             'libx265',
             'h264_vaapi',
@@ -198,16 +221,90 @@ class Hls_transcoder(video.Transcoder):
         ):
             args.extend(keyframe_args)
             # Jellyfin: Prevent the libx264 from post processing to break the set keyframe.
-            if self.output_codec_lib == 'libx264':
+            if self.video_output_codec_lib == 'libx264':
                 args.append({'-sc_threshold:v:0': '0'})
         else:
             args.extend(keyframe_args + go_args)
         
         # Jellyfin: Global_header produced by AMD HEVC VA-API encoder causes non-playable fMP4 on iOS
-        if self.output_codec_lib == 'hevc_vaapi':
+        if self.video_output_codec_lib == 'hevc_vaapi':
             args.extend([
                 {'--flags:v': None},
                 {'-global_header': None},
             ])
 
         return args
+    
+    def get_codecs_string(self):
+        codecs = [
+            self.get_video_codec_string(),
+            self.get_audio_codec_string(),
+        ]
+        return [c for c in codecs if c]
+
+    def get_video_codec_string(self):
+        if not self.can_copy_video:
+            return ''
+        if self.video_output_codec == 'h264':
+            return self.get_h264_codec_string(
+                self.video_stream['profile'],
+                self.video_stream['level'],
+            )
+        elif self.video_output_codec == 'hevc':
+            return self.get_hevc_codec_string(
+                self.video_stream['profile'],
+                self.video_stream['level'],
+            )
+    
+    def get_audio_codec_string(self):
+        if self.audio_output_codec == 'aac':
+            if self.can_copy_audio:
+                return self.get_aac_codec_string(
+                    self.audio_stream['profile'],
+                )
+            else:
+                return self.get_aac_codec_string('')
+        elif self.audio_output_codec == 'ac3':
+            return 'mp4a.a5'
+        elif self.audio_output_codec == 'eac3':
+            return 'mp4a.a6'
+        elif self.audio_output_codec == 'opus':
+            return 'Opus'
+        elif self.audio_output_codec == 'flac':
+            return 'fLaC'
+        elif self.audio_output_codec == 'mp3':
+            return 'mp4a.40.34'
+        return ''
+
+    def get_h264_codec_string(self, profile: str, level: int):
+        r = 'avc1'
+        profile = profile.lower()
+        if profile == 'high':
+            r += '.6400'
+        elif profile == 'main':
+            r += '.4D40'
+        elif profile == 'baseline':
+            r += '.42E0'
+        else:
+            r += '.4240'
+        r+ f'{level:02X}'
+        return r
+    
+    def get_hevc_codec_string(self, profile: str, level: int):
+        r = 'hvc1'
+        profile = profile.lower().strip(' ')
+        if profile == 'main10':
+            r += '.2.4'
+        else:
+            r += '.1.4'
+        r += f'.L{level}.B0'
+        return r
+    
+    def get_aac_codec_string(self, profile: str):
+        r = 'mp4a'
+        profile = profile.lower()
+        if profile == 'he':
+            r += '.40.5'
+        else:
+            r += '.40.2'
+        return r

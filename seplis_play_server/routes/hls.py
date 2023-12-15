@@ -11,8 +11,22 @@ from ..transcoders.hls import Hls_transcoder
 
 router = APIRouter()
 
+@router.get('/hls/main.m3u8')
+async def get_main(
+    settings: Transcode_settings = Depends(),
+    metadata = Depends(get_metadata),
+):
+    if not metadata or settings.source_index > len(metadata):
+        raise HTTPException(404, 'No metadata')
+    
+    transcoder = Hls_transcoder(settings=settings, metadata=metadata[settings.source_index])
+    return Response(
+        content=transcoder.generate_main_playlist(),
+        media_type='application/x-mpegURL',
+    )
+
 @router.get('/hls/media.m3u8')
-async def start_media(
+async def get_media(
     settings: Transcode_settings = Depends(),
     metadata = Depends(get_metadata),
 ):
@@ -24,12 +38,12 @@ async def start_media(
     else:
         transcoder = await start_transcode(settings)
     return Response(
-        content=transcoder.generate_hls_playlist(),
+        content=transcoder.generate_media_playlist(),
         media_type='application/x-mpegURL',
     )
 
 @router.get('/hls/media{segment}.m4s')
-async def get_media(
+async def get_media_segment(
     segment: int,
     settings: Transcode_settings = Depends(),
 ):

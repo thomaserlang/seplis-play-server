@@ -89,13 +89,18 @@ class Transcoder:
         self.settings = settings
         self.metadata = metadata
         self.video_stream = self.get_video_stream()
-        self.input_codec = self.video_stream['codec_name']
+        self.audio_stream = self.get_audio_stream()
+        self.video_input_codec = self.video_stream['codec_name']
+        self.audio_input_codec = self.audio_stream['codec_name']
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
         self.can_device_direct_play = self.get_can_device_direct_play()
         self.can_copy_video = self.get_can_copy_video()
-        self.output_codec_lib = None
-        self.output_codec = self.input_codec if self.can_copy_video else self.settings.transcode_video_codec
+        self.can_copy_audio = self.get_can_copy_audio()
+        self.video_output_codec_lib = None
+        self.audio_output_codec_lib = None
+        self.video_output_codec = self.video_input_codec if self.can_copy_video else self.settings.transcode_video_codec
+        self.audio_output_codec = self.audio_input_codec if self.can_copy_audio else self.settings.transcode_audio_codec
         self.ffmpeg_args = None
         self.transcode_folder = None
         
@@ -194,19 +199,6 @@ class Transcoder:
         self.set_audio()
         self.ffmpeg_extend_args()
 
-    def closest_keyframe_time(self, time: float):
-        if not self.metadata.get('keyframes'):
-            logger.debug(f'[{self.settings.session}] No keyframes in metadata')
-            return time
-        keyframes = [float(r) for r in self.metadata['keyframes']]
-        corrected_time = 0
-        for t in keyframes:
-            if t > time:
-                break
-            corrected_time = t
-        logger.debug(f'[{self.settings.session}] Closest keyframe for {time}: {corrected_time}')
-        return corrected_time
-
     def set_hardware_decoder(self):
         if not config.ffmpeg_hwaccel_enabled:
             return
@@ -231,7 +223,7 @@ class Transcoder:
             ])
 
     def set_video(self):
-        codec = codecs_to_library.get(self.output_codec, self.output_codec)
+        codec = codecs_to_library.get(self.video_output_codec, self.video_output_codec)
 
         if self.can_copy_video:
             codec = 'copy'
@@ -243,19 +235,19 @@ class Transcoder:
             self.ffmpeg_args.extend([
                 {'-start_at_zero': None},
                 {'-avoid_negative_ts': 'disabled'},
-                {'-copyts': None},
+                #{'-copyts': None},
             ])
         else:
             if config.ffmpeg_hwaccel_enabled:
                 codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
 
-        self.output_codec_lib = codec
+        self.video_output_codec_lib = codec
         self.ffmpeg_args.extend([
             {'-map': '0:v:0'},
             {'-c:v': codec},
         ])
 
-        if self.output_codec == 'hevc':
+        if self.video_output_codec == 'hevc':
             if self.can_copy_video and \
                     self.video_color.range_type == 'dovi' and \
                     self.video_stream.get('codec_tag_string') in ('dovi', 'dvh1', 'dvhe'):
@@ -294,12 +286,12 @@ class Transcoder:
             logger.debug(f'[{self.settings.session}] No key frames in metadata')
             return False
 
-        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.input_codec}')
+        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.video_input_codec}')
         return True
     
     def get_can_device_direct_play(self):
-        if self.input_codec not in self.settings.supported_video_codecs:
-            logger.debug(f'[{self.settings.session}] Input codec not supported: {self.input_codec}')
+        if self.video_input_codec not in self.settings.supported_video_codecs:
+            logger.debug(f'[{self.settings.session}] Input codec not supported: {self.video_input_codec}')
             return False
         
         if self.video_color_bit_depth > self.settings.supported_video_color_bit_depth:
@@ -318,6 +310,7 @@ class Transcoder:
             logger.debug(f'[{self.settings.session}] Requested max bitrate is lower than input bitrate ({self.settings.max_video_bitrate} < {self.get_video_transcode_bitrate()})')
             return False
         
+        logger.debug(f'[{self.settings.session}] Can direct play video, codec: {self.video_input_codec}')
         return True
         
     def get_video_filter(self, width: int):
@@ -342,7 +335,7 @@ class Transcoder:
             return
 
         if pix_fmt == 'yuv420p10le':
-            if self.output_codec_lib == 'h264_qsv':
+            if self.video_output_codec_lib == 'h264_qsv':
                 pix_fmt = 'yuv420p'
         
         format_ = ''
@@ -392,7 +385,7 @@ class Transcoder:
         if self.video_color_bit_depth != 10 or not config.ffmpeg_tonemap_enabled:
             return False
         
-        if self.input_codec == 'hevc' and self.video_color.range == 'hdr' and self.video_color.range_type == 'dovi':
+        if self.video_input_codec == 'hevc' and self.video_color.range == 'hdr' and self.video_color.range_type == 'dovi':
             return config.ffmpeg_hwaccel in ('qsv', 'vaapi')
         
         return self.video_color.range == 'hdr' and (self.video_color.range_type in ('hdr10', 'hlg'))
@@ -440,12 +433,11 @@ class Transcoder:
         return params
 
     def set_audio(self):
-        index = self.stream_index_by_lang('audio', self.settings.audio_lang)
-        stream = self.metadata['streams'][index.index]
+        stream = self.audio_stream
         codec = codecs_to_library.get(stream['codec_name'], '')
         
         # Audio goes out of sync if audio copy is used while the video is being transcoded
-        if self.can_copy_video and self.can_copy_audio(stream):
+        if self.can_copy_video and self.can_copy_audio:
             codec = 'copy'
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
@@ -459,15 +451,14 @@ class Transcoder:
             self.ffmpeg_args.append({'-b:a': bitrate})
         if not codec:
             raise Exception('No audio codec library')
+        self.audio_output_codec_lib = codec
         self.ffmpeg_args.extend([
-            {'-map': f'0:{index.index}'},
+            {'-map': f'0:{stream["index"]}'},
             {'-c:a': codec},
         ])
 
-    def can_copy_audio(self, stream: dict = None):
-        if not stream:
-            index = self.stream_index_by_lang('audio', self.settings.audio_lang)
-            stream = self.metadata['streams'][index.index]
+    def get_can_copy_audio(self):
+        stream = self.audio_stream
 
         if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
             logger.debug(f'[{self.settings.session}] Requested audio channels is lower than input channels ({self.settings.audio_channels} < {stream["channels"]})')
@@ -495,6 +486,12 @@ class Transcoder:
             {'-bufsize': bitrate*2},
         ]
 
+    def get_video_bitrate(self):
+        if self.can_copy_video:
+            return int(self.metadata['format']['bit_rate'] or 0)
+        else:
+            return self.get_video_transcode_bitrate()
+
     def get_video_transcode_bitrate(self):
         bitrate = self.settings.max_video_bitrate or int(self.metadata['format']['bit_rate'] or 0)
 
@@ -504,7 +501,7 @@ class Transcoder:
             if not upscaling:
                 bitrate = self._min_video_bitrate(int(self.metadata['format']['bit_rate']), bitrate)
 
-            bitrate = self._video_scale_bitrate(bitrate, self.input_codec, self.settings.transcode_video_codec)
+            bitrate = self._video_scale_bitrate(bitrate, self.video_input_codec, self.settings.transcode_video_codec)
             
             # don't exceed the requested bitrate
             if self.settings.max_video_bitrate:
@@ -547,6 +544,10 @@ class Transcoder:
 
     def get_video_stream(self):
         return get_video_stream(self.metadata)
+    
+    def get_audio_stream(self):
+        index = self.stream_index_by_lang('audio', self.settings.audio_lang)
+        return self.metadata['streams'][index.index]
 
     def find_ffmpeg_arg(self, key):
         for a in self.ffmpeg_args:
