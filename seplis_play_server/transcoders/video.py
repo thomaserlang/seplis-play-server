@@ -95,7 +95,6 @@ class Transcoder:
         self.audio_input_codec = self.audio_stream['codec_name']
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
-        self.can_device_direct_play = self.get_can_device_direct_play()
         self.can_copy_video = self.get_can_copy_video()
         self.can_copy_audio = self.get_can_copy_audio()
         self.video_output_codec_lib = None
