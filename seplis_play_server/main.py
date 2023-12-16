@@ -40,7 +40,6 @@ app.include_router(hls.router)
 
 # The media.m3u8 gets updated too fast and the browser gets an old version
 StaticFiles.is_not_modified = lambda *args, **kwargs: False
-app.include_router(hls.router)
 app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
 
 @app.on_event('startup')
