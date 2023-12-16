@@ -9,7 +9,7 @@ router = APIRouter()
 class Request_media(BaseModel):
     direct_play_url: str
     can_direct_play: bool
-    transcode_url: str
+    hls_url: str
 
 @router.get('/request-media', response_model=Request_media)
 async def request_media(
@@ -22,10 +22,8 @@ async def request_media(
     
     t = Transcoder(settings=settings, metadata=metadata[source_index])
 
-    video_container_supported = any(fmt in settings.supported_video_containers \
-                           for fmt in metadata[source_index]['format']['format_name'].split(','))
     return Request_media(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
-        can_direct_play=video_container_supported and t.can_device_direct_play and t.can_copy_audio,
-        transcode_url=f'/hls/media.m3u8?{urlencode(settings.to_args_dict())}',
+        can_direct_play=t.can_device_direct_play and t.can_copy_audio,
+        hls_url=f'/hls/media.m3u8?{urlencode(settings.to_args_dict())}',
     )

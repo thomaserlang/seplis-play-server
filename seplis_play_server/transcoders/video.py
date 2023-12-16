@@ -304,20 +304,25 @@ class Transcoder:
             logger.debug(f'[{self.settings.session}] No key frames in metadata')
             return False
 
-        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.video_input_codec}')
+        logger.debug(f'[{self.settings.session}] Can copy video')
         return True
     
     def get_can_device_direct_play(self):
         if not self.get_can_copy_video(check_key_frames=False):
             return False
         
+        if not any(fmt in self.settings.supported_video_containers \
+                for fmt in self.metadata['format']['format_name'].split(',')):
+            logger.debug(f'[{self.settings.session}] Input video container not supported: {self.metadata["format"]["format_name"]}')
+            return False
+
         if not self.settings.client_can_switch_audio_track:
             if not self.audio_stream.get('disposition', {}).get('default'):
                 if self.audio_stream['group_index'] != 0:
                     logger.debug(f'[{self.settings.session}] Client can\'t switch audio track')
                     return False
 
-        logger.debug(f'[{self.settings.session}] Can direct play video, codec: {self.video_input_codec}')
+        logger.debug(f'[{self.settings.session}] Can direct play video')
         return True
         
     def get_video_filter(self, width: int):
