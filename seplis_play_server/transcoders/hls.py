@@ -14,10 +14,9 @@ class Hls_transcoder(video.Transcoder):
     media_name: str = 'media.m3u8'
 
     def __init__(self, settings: video.Transcode_settings, metadata: dict):
-        #if settings.transcode_video_codec not in ('h264', 'hevc'):
-        settings.transcode_video_codec = 'h264'
-        # Still issues with hevc
-        settings.supported_video_codecs = ['h264',]
+        if settings.transcode_video_codec not in ('h264', 'hevc'):
+            settings.transcode_video_codec = 'h264'
+        settings.supported_video_codecs = ['h264', 'hevc']
         if settings.format == 'hls.js':
             # Find out if hls.js supports other that aac, e.g. eac3 doesn't work
             settings.supported_audio_codecs = ['aac',]
@@ -166,9 +165,14 @@ class Hls_transcoder(video.Transcoder):
     
     def start_time_from_segment(self, segment: int) -> Decimal:
         segments = self.get_segments()
-        if segment >= len(segments) or segment < 1:
-            return Decimal(0)
-        return sum(segments[:segment])
+        r = sum(segments[:segment])
+        if self.can_copy_video:
+            # It seems that sending ffmpeg the precise start time of 
+            # the keyframe often results in it starting a few seconds before.
+            # Adding 0.7 seconds seems to fix this most of the time,
+            # tried with 0.1, 0.3 and 0.5 which seemed to work less often.
+            r += Decimal(0.7)
+        return r
     
     def start_segment_from_start_time(self, start_time: Decimal) -> int:
         if start_time <= 0:
@@ -177,7 +181,7 @@ class Hls_transcoder(video.Transcoder):
         time = Decimal(0)
         for i, t in enumerate(segments):
             time += t
-            if time > start_time:
+            if time >= start_time:
                 return i
         return 0
         

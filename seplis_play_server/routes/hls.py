@@ -47,8 +47,7 @@ async def get_media_segment(
         if await Hls_transcoder.is_segment_ready(folder, segment):
             return FileResponse(Hls_transcoder.get_segment_path(folder, segment))
         
-        # If the segment is within 15 segments of the last transcoded segment
-        # then wait for the segment to be transcoded.
+        # Number of segments we allow to wait for before starting a new transcoder
         wait_for_segments = 7
         first_transcoded_segment, last_transcoded_segment = \
             await Hls_transcoder.first_last_transcoded_segment(folder)
