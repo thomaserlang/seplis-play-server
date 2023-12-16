@@ -94,6 +94,8 @@ class Hls_transcoder(video.Transcoder):
 
     def generate_media_playlist(self):
         settings_dict = self.settings.to_args_dict()
+        settings_dict.pop('start_segment', None)
+        settings_dict.pop('start_time', None)
         url_settings = urlencode(settings_dict)
         segments = self.get_segments()
         l = []
