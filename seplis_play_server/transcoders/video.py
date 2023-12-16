@@ -23,7 +23,7 @@ class Transcode_settings:
     start_segment: Optional[int] | constr(max_length=0) = None
     audio_lang: Optional[str] = None
     max_audio_channels: Optional[int] | constr(max_length=0) = None
-    width: Optional[int] | constr(max_length=0) = None
+    max_width: Optional[int] | constr(max_length=0) = None
     max_video_bitrate: Optional[int] | constr(max_length=0) = None
     client_width: Optional[int] | constr(max_length=0) = None
     supported_video_containers: Annotated[list[constr(min_length=1)], Query()] = Query(default=['mp4'])
@@ -257,7 +257,7 @@ class Transcoder:
         if codec == 'copy':
             return
 
-        width = self.settings.width or self.settings.client_width or self.video_stream['width']
+        width = self.settings.max_width or self.settings.client_width or self.video_stream['width']
         if width > self.video_stream['width']:
             width = self.video_stream['width']
 
@@ -287,8 +287,8 @@ class Transcoder:
             logger.debug(f'[{self.settings.session}] HDR format not supported: {self.video_color.range_type}')
             return False
 
-        if self.settings.width and self.settings.width < self.video_stream['width']:
-            logger.debug(f'[{self.settings.session}] Requested width is lower than input width ({self.settings.width} < {self.video_stream["width"]})')
+        if self.settings.max_width and self.settings.max_width < self.video_stream['width']:
+            logger.debug(f'[{self.settings.session}] Requested width is lower than input width ({self.settings.max_width} < {self.video_stream["width"]})')
             return False
         
         if self.settings.max_video_bitrate and self.settings.max_video_bitrate < int(self.metadata['format']['bit_rate'] or 0):
@@ -505,7 +505,7 @@ class Transcoder:
         bitrate = self.settings.max_video_bitrate or int(self.metadata['format']['bit_rate'] or 0)
 
         if bitrate:
-            upscaling = self.settings.width and self.settings.width > self.video_stream['width']
+            upscaling = self.settings.max_width and self.settings.max_width > self.video_stream['width']
             # only allow bitrate increase if upscaling
             if not upscaling:
                 bitrate = self._min_video_bitrate(int(self.metadata['format']['bit_rate']), bitrate)
