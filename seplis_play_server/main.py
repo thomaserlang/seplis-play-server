@@ -7,12 +7,11 @@ set_logger(f'play-server-{config.port}.log')
 
 from .database import database
 from .routes import (
-    health, 
-    sources, 
-    thumbnails, 
-    keep_alive, 
-    subtitle_file, 
-    transcode, 
+    health,
+    sources,
+    thumbnails,
+    keep_alive,
+    subtitle_file,
     close_session,
     download_source,
     request_media,
@@ -34,7 +33,6 @@ app.include_router(sources.router)
 app.include_router(thumbnails.router)
 app.include_router(keep_alive.router)
 app.include_router(subtitle_file.router)
-app.include_router(transcode.router)
 app.include_router(close_session.router)
 app.include_router(download_source.router)
 app.include_router(request_media.router)
