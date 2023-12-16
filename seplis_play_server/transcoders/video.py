@@ -29,6 +29,7 @@ class Transcode_settings:
     max_video_bitrate: Optional[int] | constr(max_length=0) = None
     client_width: Optional[int] | constr(max_length=0) = None
     supported_video_containers: Annotated[list[constr(min_length=1)], Query()] = Query(default=['mp4'])
+    client_can_switch_audio_track: bool = False
        
     @field_validator(
         'supported_video_codecs', 
@@ -276,20 +277,7 @@ class Transcoder:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
-    def get_can_copy_video(self):
-        if not self.can_device_direct_play:
-            return False
-            
-        # We need the key frames to determin the actually start time when seeking 
-        # otherwise the subtitles will be out of sync
-        if not self.metadata.get('keyframes'):
-            logger.debug(f'[{self.settings.session}] No key frames in metadata')
-            return False
-
-        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.video_input_codec}')
-        return True
-    
-    def get_can_device_direct_play(self):
+    def get_can_copy_video(self, check_key_frames=True):
         if self.video_input_codec not in self.settings.supported_video_codecs:
             logger.debug(f'[{self.settings.session}] Input codec not supported: {self.video_input_codec}')
             return False
@@ -309,7 +297,26 @@ class Transcoder:
         if self.settings.max_video_bitrate and self.settings.max_video_bitrate < int(self.metadata['format']['bit_rate'] or 0):
             logger.debug(f'[{self.settings.session}] Requested max bitrate is lower than input bitrate ({self.settings.max_video_bitrate} < {self.get_video_transcode_bitrate()})')
             return False
+            
+        # We need the key frames to determin the actually start time when seeking 
+        # otherwise the subtitles will be out of sync
+        if check_key_frames and not self.metadata.get('keyframes'):
+            logger.debug(f'[{self.settings.session}] No key frames in metadata')
+            return False
+
+        logger.debug(f'[{self.settings.session}] Can copy video, codec: {self.video_input_codec}')
+        return True
+    
+    def get_can_device_direct_play(self):
+        if not self.get_can_copy_video(check_key_frames=False):
+            return False
         
+        if not self.settings.client_can_switch_audio_track:
+            if not self.audio_stream.get('disposition', {}).get('default'):
+                if self.audio_stream['group_index'] != 0:
+                    logger.debug(f'[{self.settings.session}] Client can\'t switch audio track')
+                    return False
+
         logger.debug(f'[{self.settings.session}] Can direct play video, codec: {self.video_input_codec}')
         return True
         
@@ -547,6 +554,7 @@ class Transcoder:
     
     def get_audio_stream(self):
         index = self.stream_index_by_lang('audio', self.settings.audio_lang)
+        self.metadata['streams'][index.index]['group_index'] = index.group_index
         return self.metadata['streams'][index.index]
 
     def find_ffmpeg_arg(self, key):
@@ -627,7 +635,7 @@ def get_video_color_bit_depth(source: dict):
     return 8
 
 
-def stream_index_by_lang(metadata: Dict, codec_type:str, lang: str):
+def stream_index_by_lang(metadata: Dict, codec_type: str, lang: str):
     logger.debug(f'Looking for {codec_type} with language {lang}')
     group_index = -1
     langs = []
@@ -652,9 +660,9 @@ def stream_index_by_lang(metadata: Dict, codec_type:str, lang: str):
             group_index += 1
             if not first:
                 first = Stream_index(index=i, group_index=group_index)
-            if lang == '':
-                return first
-            if 'tags' in stream:
+            if lang == '' and stream.get('disposition', {}).get('default'):
+                return Stream_index(index=i, group_index=group_index)
+            if 'tags' in stream and lang:
                 l = stream['tags'].get('language') or stream['tags'].get('title')
                 if not l:
                     continue
