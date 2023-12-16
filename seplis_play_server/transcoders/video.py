@@ -22,7 +22,7 @@ class Transcode_settings:
     start_time: Optional[Decimal] | constr(max_length=0) = 0
     start_segment: Optional[int] | constr(max_length=0) = None
     audio_lang: Optional[str] = None
-    audio_channels: Optional[int] | constr(max_length=0) = None
+    max_audio_channels: Optional[int] | constr(max_length=0) = None
     width: Optional[int] | constr(max_length=0) = None
     max_video_bitrate: Optional[int] | constr(max_length=0) = None
     client_width: Optional[int] | constr(max_length=0) = None
@@ -452,9 +452,9 @@ class Transcoder:
             if not codec or codec not in self.settings.supported_audio_codecs:
                 codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
             bitrate = stream.get('bit_rate', stream['channels'] * 128000)
-            if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
-                bitrate = self.settings.audio_channels * 128000
-                self.ffmpeg_args.append({'-ac': self.settings.audio_channels})
+            if self.settings.max_audio_channels and self.settings.max_audio_channels < stream['channels']:
+                bitrate = self.settings.max_audio_channels * 128000
+                self.ffmpeg_args.append({'-ac': self.settings.max_audio_channels})
             else:
                 self.ffmpeg_args.append({'-ac': stream['channels']})
             self.ffmpeg_args.append({'-b:a': bitrate})
@@ -469,8 +469,8 @@ class Transcoder:
     def get_can_copy_audio(self):
         stream = self.audio_stream
 
-        if self.settings.audio_channels and self.settings.audio_channels < stream['channels']:
-            logger.debug(f'[{self.settings.session}] Requested audio channels is lower than input channels ({self.settings.audio_channels} < {stream["channels"]})')
+        if self.settings.max_audio_channels and self.settings.max_audio_channels < stream['channels']:
+            logger.debug(f'[{self.settings.session}] Requested audio channels is lower than input channels ({self.settings.max_audio_channels} < {stream["channels"]})')
             return False
             
         if stream['codec_name'] not in self.settings.supported_audio_codecs:
