@@ -1,6 +1,5 @@
 from decimal import Decimal
-import os, asyncio, sys
-import shutil
+import os, asyncio, sys, shutil, uuid
 from fastapi import Query
 from typing import Dict, Literal, Optional, Annotated
 from pydantic import BaseModel, ConfigDict, constr, conint, field_validator
@@ -11,15 +10,15 @@ from seplis_play_server import config, logger
 class Transcode_settings:
     source_index: int
     play_id: constr(min_length=1)
-    session: constr(min_length=1)
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
     format: Literal['pipe', 'hls', 'hls.js', 'dash']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
 
+    session: Annotated[constr(min_length=36), Query(default_factory=lambda: str(uuid.uuid4()))]
     supported_hdr_formats: list[Literal['hdr10', 'hlg', 'dovi']] = Query(default=[])
-    supported_video_color_bit_depth: conint(ge=8) = 10
+    supported_video_color_bit_depth: conint(ge=8) | constr(max_length=0) = 10
     start_time: Optional[Decimal] | constr(max_length=0) = 0
     start_segment: Optional[int] | constr(max_length=0) = None
     audio_lang: Optional[str] = None
