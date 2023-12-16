@@ -3,7 +3,7 @@ from iso639 import Lang
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from ..transcoders.video import get_video_color_bit_depth, get_video_color, get_video_stream
-from ..dependencies import get_metadata
+from ..dependencies import get_sources
 from .. import database, models, logger
 
 router = APIRouter()
@@ -34,11 +34,11 @@ class Source_model(BaseModel):
     format: str | None = None
 
 @router.get('/sources', response_model=list[Source_model])
-async def get_sources(metadata = Depends(get_metadata)):
-    if not metadata:
+async def get_sources(sources = Depends(get_sources)):
+    if not sources:
         raise HTTPException(404, 'No sources')
     data: list[Source_model] = []
-    for i, metad in enumerate(metadata):
+    for i, metad in enumerate(sources):
         video = get_video_stream(metad)
         if not video:
             raise HTTPException(500, 'No video stream')

@@ -4,8 +4,7 @@ from fastapi import HTTPException
 from seplis_play_server import database, logger, models, schemas
 from seplis_play_server import config
 
-
-async def get_metadata(play_id) -> list[dict]:
+async def get_sources(play_id: str):
     data = decode_play_id(play_id)
     if data.type == 'series':
         query = select(models.Episode.meta_data).where(
@@ -21,6 +20,13 @@ async def get_metadata(play_id) -> list[dict]:
     async with database.session() as session:
         r = await session.scalars(query)
         return list(r.all())
+    
+
+async def get_metadata(play_id: str, source_index: int) -> list[dict]:
+    metadatas = await get_sources(play_id)
+    if source_index > (len(metadatas) - 1):
+        raise HTTPException(404, 'No metadata')
+    return metadatas[source_index]
 
 
 def decode_play_id(play_id: str):

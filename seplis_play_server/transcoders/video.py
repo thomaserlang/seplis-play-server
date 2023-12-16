@@ -12,7 +12,6 @@ class Transcode_settings:
     source_index: int
     play_id: constr(min_length=1)
     session: constr(min_length=1)
-    source_index: int
     supported_video_codecs: Annotated[list[constr(min_length=1)], Query()]
     supported_audio_codecs: Annotated[list[constr(min_length=1)], Query()]
     format: Literal['pipe', 'hls', 'hls.js', 'dash']

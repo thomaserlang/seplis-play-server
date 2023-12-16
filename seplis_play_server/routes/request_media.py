@@ -17,10 +17,7 @@ async def request_media(
     settings: Transcode_settings = Depends(),
     metadata = Depends(get_metadata), 
 ):
-    if not metadata or settings.source_index > len(metadata):
-        raise HTTPException(404, 'No metadata')
-    
-    t = Transcoder(settings=settings, metadata=metadata[source_index])
+    t = Transcoder(settings=settings, metadata=metadata)
 
     return Request_media(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',

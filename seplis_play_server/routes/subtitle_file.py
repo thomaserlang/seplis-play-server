@@ -7,18 +7,13 @@ router = APIRouter()
 
 @router.get('/subtitle-file')
 async def download_subtitle(
-    source_index: int,
     lang: constr(min_length=1),
     offset: int | float = 0,
     metadata=Depends(get_metadata)
-):    
-    if not metadata:
-        raise HTTPException(404, 'No metadata')
-    if source_index >= len(metadata):
-        raise HTTPException(404, 'Source index not found')
+): 
     if int(lang.split(':')[1]) < 1000:
         sub = await get_subtitle_file(
-            metadata=metadata[source_index], 
+            metadata=metadata, 
             lang=lang, 
             offset=offset
         )

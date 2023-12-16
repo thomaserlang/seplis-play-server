@@ -16,10 +16,7 @@ async def get_main(
     settings: Transcode_settings = Depends(),
     metadata = Depends(get_metadata),
 ):
-    if not metadata or settings.source_index > len(metadata):
-        raise HTTPException(404, 'No metadata')
-    
-    transcoder = Hls_transcoder(settings=settings, metadata=metadata[settings.source_index])
+    transcoder = Hls_transcoder(settings=settings, metadata=metadata)
     return Response(
         content=transcoder.generate_main_playlist(),
         media_type='application/x-mpegURL',
@@ -30,11 +27,8 @@ async def get_media(
     settings: Transcode_settings = Depends(),
     metadata = Depends(get_metadata),
 ):
-    if not metadata or settings.source_index > len(metadata):
-        raise HTTPException(404, 'No metadata')
-    
     if settings.session in sessions:
-        transcoder = Hls_transcoder(settings=settings, metadata=metadata[settings.source_index])
+        transcoder = Hls_transcoder(settings=settings, metadata=metadata)
     else:
         transcoder = await start_transcode(settings)
     return Response(
@@ -89,10 +83,8 @@ def get_init(
         raise HTTPException(404, 'No init file')
 
 async def start_transcode(settings: Transcode_settings, start_segment: int = -1):
-    metadata = await get_metadata(settings.play_id)
-    if not metadata or settings.source_index > len(metadata):
-        raise HTTPException(404, 'No metadata')
-    transcode = Hls_transcoder(settings=settings, metadata=metadata[settings.source_index])
+    metadata = await get_metadata(settings.play_id, settings.source_index)
+    transcode = Hls_transcoder(settings=settings, metadata=metadata)
     if start_segment == -1:
         transcode.settings.start_segment = transcode.start_segment_from_start_time(settings.start_time)
         transcode.settings.start_time = transcode.start_time_from_segment(transcode.settings.start_segment)
