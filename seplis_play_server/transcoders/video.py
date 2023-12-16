@@ -25,7 +25,6 @@ class Transcode_settings:
     max_audio_channels: Optional[int] | constr(max_length=0) = None
     max_width: Optional[int] | constr(max_length=0) = None
     max_video_bitrate: Optional[int] | constr(max_length=0) = None
-    client_width: Optional[int] | constr(max_length=0) = None
     supported_video_containers: Annotated[list[constr(min_length=1)], Query()] = Query(default=['mp4'])
     client_can_switch_audio_track: bool = False
        
@@ -257,7 +256,7 @@ class Transcoder:
         if codec == 'copy':
             return
 
-        width = self.settings.max_width or self.settings.client_width or self.video_stream['width']
+        width = self.settings.max_width or self.video_stream['width']
         if width > self.video_stream['width']:
             width = self.video_stream['width']
 
