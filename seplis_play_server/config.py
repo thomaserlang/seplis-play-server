@@ -39,6 +39,7 @@ class ConfigModel(BaseSettings):
     ffmpeg_hwaccel: str = 'qsv'
     ffmpeg_hwaccel_low_powermode: bool = True
     ffmpeg_tonemap_enabled: bool = True
+    ffmpeg_segment_threshold_for_new_transcoder: int = 7
     extract_keyframes: bool = True
 
     port: int = 8003
