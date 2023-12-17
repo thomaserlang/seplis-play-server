@@ -12,11 +12,12 @@ from . import video
 class Hls_transcoder(video.Transcoder):
 
     media_name: str = 'media.m3u8'
+    CODECES = ('h264', 'hevc')
 
     def __init__(self, settings: video.Transcode_settings, metadata: dict):
-        if settings.transcode_video_codec not in ('h264', 'hevc'):
+        if settings.transcode_video_codec not in self.CODECES:
             settings.transcode_video_codec = 'h264'
-        settings.supported_video_codecs = ['h264', 'hevc']
+        settings.supported_video_codecs = [c for c in settings.supported_video_codecs if c in self.CODECES]
         if settings.format == 'hls.js':
             # Find out if hls.js supports other that aac, e.g. eac3 doesn't work
             settings.supported_audio_codecs = ['aac',]
