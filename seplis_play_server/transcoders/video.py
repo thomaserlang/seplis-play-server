@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 import uuid
+from dataclasses import dataclass as pydataclass
 from decimal import Decimal
 from typing import Annotated, Dict, Literal, Optional
 
@@ -84,7 +85,7 @@ class Video_color(BaseModel):
     range_type: str
 
 
-@dataclass
+@pydataclass
 class Session_model:
     process: asyncio.subprocess.Process
     call_later: asyncio.TimerHandle
