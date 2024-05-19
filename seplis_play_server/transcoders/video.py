@@ -35,7 +35,7 @@ class Transcode_settings:
         str, Query(default_factory=lambda: str(uuid.uuid4()), min_length=32)
     ]
     supported_video_containers: Annotated[
-        list[Annotated[str, Query(max_length=1)]],
+        list[Annotated[str, Query(min_length=1)]],
         Query(default_factory=lambda: ['mp4']),
     ]
     supported_hdr_formats: Annotated[
