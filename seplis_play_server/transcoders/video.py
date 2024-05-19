@@ -27,7 +27,7 @@ class Transcode_settings:
     supported_audio_codecs: Annotated[
         list[Annotated[str, Query(min_length=1)]], Query()
     ]
-    format: Literal['pipe', 'hls', 'hls.js', 'dash']
+    format: Literal['pipe', 'hls', 'hls.js']
     transcode_video_codec: Literal['h264', 'hevc', 'vp9']
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3']
 
@@ -39,7 +39,7 @@ class Transcode_settings:
         Query(default_factory=lambda: ['mp4']),
     ]
     supported_hdr_formats: Annotated[
-        list[Literal['hdr10', 'hlg', 'dovi']], Query(default_factory=lambda: [])
+        list[Literal['hdr10', 'hlg', 'dovi', '']], Query(default_factory=lambda: [])
     ]
     supported_video_color_bit_depth: (
         Annotated[int, Query(ge=8)] | Annotated[str, Query(max_length=0)]
