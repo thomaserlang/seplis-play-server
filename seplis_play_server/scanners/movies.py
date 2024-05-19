@@ -1,44 +1,56 @@
-import os.path
 import asyncio
-import sqlalchemy as sa
+import os.path
 from datetime import datetime, timezone
-from seplis_play_server import config, utils, logger, models, schemas
+
+import sqlalchemy as sa
+from guessit import guessit
+
+from seplis_play_server import config, logger, models, schemas, utils
 from seplis_play_server.client import client
 from seplis_play_server.database import database
-from guessit import guessit
+
 from .base import Play_scan
 
 
 class Movie_scan(Play_scan):
-
     SCANNER_NAME = 'Movies'
 
     def parse(self, filename):
-        d = guessit(filename, {
-            'type': 'movie',
-            'excludes': ['country', 'language', 'film'],
-        })
+        d = guessit(
+            filename,
+            {
+                'type': 'movie',
+                'excludes': ['country', 'language', 'film', 'part'],
+                'no_user_config': 'true',
+            },
+        )
         if d and d.get('title'):
             t = d['title']
             if d.get('part'):
                 t += f' Part {d["part"]}'
             if d.get('year'):
                 t += f" ({d['year']})"
-            return t        
-        logger.info(f'{filename} doesn\'t look like a movie')
+            return t
+        logger.info(f"{filename} doesn't look like a movie")
 
     async def save_item(self, item: str, path: str):
         if not os.path.exists(path):
-            logger.debug(f'Path doesn\'t exist any longer: {path}')
+            logger.debug(f"Path doesn't exist any longer: {path}")
             return
         async with database.session() as session:
-            movie = await session.scalar(sa.select(models.Movie).where(
-                models.Movie.path == path,
-            ))
+            movie = await session.scalar(
+                sa.select(models.Movie).where(
+                    models.Movie.path == path,
+                )
+            )
             movie_id = movie.movie_id if movie else None
             modified_time = self.get_file_modified_time(path)
-            
-            if not movie or (movie.modified_time != modified_time) or not movie.meta_data:
+
+            if (
+                not movie
+                or (movie.modified_time != modified_time)
+                or not movie.meta_data
+            ):
                 if not movie_id:
                     movie_id = await self.lookup(item)
                     if not movie_id:
@@ -50,20 +62,28 @@ class Movie_scan(Play_scan):
                         return
 
                     if movie:
-                        sql = sa.update(models.Movie).where(
-                            models.Movie.path == path,
-                        ).values({
-                            models.Movie.movie_id: movie_id,
-                            models.Movie.meta_data: metadata,
-                            models.Movie.modified_time: modified_time,
-                        })
+                        sql = (
+                            sa.update(models.Movie)
+                            .where(
+                                models.Movie.path == path,
+                            )
+                            .values(
+                                {
+                                    models.Movie.movie_id: movie_id,
+                                    models.Movie.meta_data: metadata,
+                                    models.Movie.modified_time: modified_time,
+                                }
+                            )
+                        )
                     else:
-                        sql = sa.insert(models.Movie).values({
-                            models.Movie.movie_id: movie_id,
-                            models.Movie.path: path,
-                            models.Movie.meta_data: metadata,
-                            models.Movie.modified_time: modified_time,
-                        })
+                        sql = sa.insert(models.Movie).values(
+                            {
+                                models.Movie.movie_id: movie_id,
+                                models.Movie.path: path,
+                                models.Movie.meta_data: metadata,
+                                models.Movie.modified_time: modified_time,
+                            }
+                        )
                     await session.execute(sql)
                     await session.commit()
 
@@ -85,31 +105,46 @@ class Movie_scan(Play_scan):
         if not config.server_id:
             logger.warn(f'[movie-{movie_id}] No server_id specified')
 
-        r = await client.patch(f'/2/play-servers/{config.server_id}/movies', data=utils.json_dumps([
-            schemas.Play_server_movie_create(
-                movie_id=movie_id,
-                created_at=created_at or datetime.now(tz=timezone.utc)
-            )
-        ]), headers={
-            'Authorization': f'Secret {config.secret}',
-            'Content-Type': 'application/json',
-        })
+        r = await client.patch(
+            f'/2/play-servers/{config.server_id}/movies',
+            data=utils.json_dumps(
+                [
+                    schemas.Play_server_movie_create(
+                        movie_id=movie_id,
+                        created_at=created_at or datetime.now(tz=timezone.utc),
+                    )
+                ]
+            ),
+            headers={
+                'Authorization': f'Secret {config.secret}',
+                'Content-Type': 'application/json',
+            },
+        )
         if r.status_code >= 400:
-            logger.error(f'[movie-{movie_id}] Faild to add the movie to the play server index ({config.server_id}): {r.content}')
+            logger.error(
+                f'[movie-{movie_id}] Faild to add the movie to the play server index ({config.server_id}): {r.content}'
+            )
         else:
-            logger.info(f'[movie-{movie_id}] Added to play server index ({config.server_id})')
+            logger.info(
+                f'[movie-{movie_id}] Added to play server index ({config.server_id})'
+            )
 
     async def lookup(self, title: str):
         logger.debug(f'Looking for a movie with title: "{title}"')
         async with database.session() as session:
-            movie = await session.scalar(sa.select(models.Movie_id_lookup).where(
-                models.Movie_id_lookup.file_title == title,
-            ))
+            movie = await session.scalar(
+                sa.select(models.Movie_id_lookup).where(
+                    models.Movie_id_lookup.file_title == title,
+                )
+            )
             if not movie:
-                r = await client.get('/2/search', params={
-                    'title': title,
-                    'type': 'movie',
-                })
+                r = await client.get(
+                    '/2/search',
+                    params={
+                        'title': title,
+                        'type': 'movie',
+                    },
+                )
                 r.raise_for_status()
                 movies = r.json()
                 if not movies:
@@ -117,51 +152,60 @@ class Movie_scan(Play_scan):
                 logger.debug(f'[movie-{movies[0]["id"]}] Found: {movies[0]["title"]}')
                 movie = models.Movie_id_lookup(
                     file_title=title,
-                    movie_title=movies[0]["title"],
-                    movie_id=movies[0]["id"],
+                    movie_title=movies[0]['title'],
+                    movie_id=movies[0]['id'],
                     updated_at=datetime.now(tz=timezone.utc),
                 )
                 await session.merge(movie)
                 await session.commit()
                 return movie.movie_id
-            else:                
-                logger.debug(f'[movie-{movie.movie_id}] Found from cache: {movie.movie_title}')
+            else:
+                logger.debug(
+                    f'[movie-{movie.movie_id}] Found from cache: {movie.movie_title}'
+                )
                 return movie.movie_id
 
     async def delete_path(self, path):
         async with database.session() as session:
-            movie_id = await session.scalar(sa.select(models.Movie.movie_id).where(
-                models.Movie.path == path,
-            ))
-            if movie_id:
-                await session.execute(sa.delete(models.Movie).where(
+            movie_id = await session.scalar(
+                sa.select(models.Movie.movie_id).where(
                     models.Movie.path == path,
-                ))
+                )
+            )
+            if movie_id:
+                await session.execute(
+                    sa.delete(models.Movie).where(
+                        models.Movie.path == path,
+                    )
+                )
                 await session.commit()
 
                 await self.delete_from_index(movie_id=movie_id, session=session)
 
                 logger.info(f'[movie-{movie_id}] Deleted: {path}')
                 return True
-                
+
         return False
 
     async def delete_from_index(self, movie_id: int, session):
         if self.cleanup_mode:
             return
         if config.server_id:
-            m = await session.scalar(sa.select(models.Movie).where(
-                models.Movie.movie_id == movie_id,
-            ))
+            m = await session.scalar(
+                sa.select(models.Movie).where(
+                    models.Movie.movie_id == movie_id,
+                )
+            )
             if m:
                 return
-            r = await client.delete(f'/2/play-servers/{config.server_id}/movies/{movie_id}',
-                headers={
-                    'Authorization': f'Secret {config.secret}'
-                }
+            r = await client.delete(
+                f'/2/play-servers/{config.server_id}/movies/{movie_id}',
+                headers={'Authorization': f'Secret {config.secret}'},
             )
             if r.status_code >= 400:
-                logger.error(f'[movie-{movie_id}] Failed to add the movie to the play server index: {r.content}')
+                logger.error(
+                    f'[movie-{movie_id}] Failed to add the movie to the play server index: {r.content}'
+                )
             else:
                 logger.info(f'[movie-{movie_id}] Deleted from play server index')
         else:
@@ -169,7 +213,9 @@ class Movie_scan(Play_scan):
 
     async def get_paths_matching_base_path(self, base_path):
         async with database.session() as session:
-            results = await session.scalars(sa.select(models.Movie.path).where(
-                models.Movie.path.like(f'{base_path}%')
-            ))
+            results = await session.scalars(
+                sa.select(models.Movie.path).where(
+                    models.Movie.path.like(f'{base_path}%')
+                )
+            )
             return [r for r in results]
