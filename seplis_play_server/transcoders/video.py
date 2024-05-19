@@ -84,10 +84,11 @@ class Video_color(BaseModel):
     range_type: str
 
 
-class Session_model(BaseModel):
+@dataclass
+class Session_model:
     process: asyncio.subprocess.Process
-    transcode_folder: Optional[str] | None = None
     call_later: asyncio.TimerHandle
+    transcode_folder: Optional[str] | None = None
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,

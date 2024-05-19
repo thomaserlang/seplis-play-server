@@ -105,9 +105,6 @@ class Episode_scan(Play_scan):
                         if not await self.episode_number_lookup(item, path):
                             return False
                 try:
-                    import logging
-
-                    logging.error('Saving episode')
                     metadata = await self.get_metadata(path)
 
                     if ep:
