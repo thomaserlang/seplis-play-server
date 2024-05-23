@@ -1,21 +1,23 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from seplis_play_server.logger import set_logger
+from fastapi.staticfiles import StaticFiles
+
 from seplis_play_server.config import config
+from seplis_play_server.logger import set_logger
+
 set_logger(f'play-server-{config.port}.log')
 
 from .database import database
 from .routes import (
-    health,
-    sources,
-    thumbnails,
-    keep_alive,
-    subtitle_file,
     close_session,
     download_source,
-    request_media,
+    health,
     hls,
+    keep_alive,
+    request_media,
+    sources,
+    subtitle_file,
+    thumbnails,
 )
 
 app = FastAPI(
@@ -50,6 +52,7 @@ async def startup():
 async def shutdown():
     await database.engine.dispose()
 
-    from .transcoders.video import sessions, close_session as cs
+    from .transcoders.video import close_session as cs
+    from .transcoders.video import sessions
     for session in list(sessions):
         cs(session)

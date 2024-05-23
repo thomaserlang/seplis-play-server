@@ -295,13 +295,16 @@ class Episode_scan(Play_scan):
                         int(match.group('month')),
                         int(match.group('day')),
                     )
+                return result
             except re.error as error:
                 logger.exception(f'episode parse re error: {error}')
             except Exception:
                 logger.exception(f'episode parse pattern: {pattern}')
-        return result
+        
+        return result if result.title and (result.episode_number or (result.season and result.episode)) else None
 
-    def guessit_parse_file_name(self, filename: str) -> schemas.Parsed_file_episode:
+
+    def guessit_parse_file_name(self, filename: str):
         d = guessit(
             filename,
             {
@@ -324,9 +327,9 @@ class Episode_scan(Play_scan):
                 result.episode_number = d['episode']
             if d.get('date'):
                 result.date = d['date']
+            return result
         else:
             logger.info(f"{filename} doesn't look like an episode")
-        return result
 
     async def get_paths_matching_base_path(self, base_path: str):
         async with database.session() as session:

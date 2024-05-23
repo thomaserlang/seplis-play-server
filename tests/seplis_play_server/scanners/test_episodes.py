@@ -1,12 +1,14 @@
-import pytest
+from datetime import date, datetime
+from unittest import mock
+
 import httpx
+import pytest
 import respx
 import sqlalchemy as sa
-from unittest import mock
-from datetime import date, datetime
-from seplis_play_server.testbase import run_file
-from seplis_play_server.database import Database
+
 from seplis_play_server import models, schemas
+from seplis_play_server.database import Database
+from seplis_play_server.testbase import run_file
 
 
 @pytest.mark.asyncio
