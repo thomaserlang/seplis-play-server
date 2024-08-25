@@ -1,17 +1,17 @@
-FROM python:3.11-bullseye as pybuilder
+FROM python:3.11-bookworm as pybuilder
 COPY . .
 ENV \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN pip wheel -r requirements.txt --wheel-dir=/wheels
 
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 # https://github.com/intel/compute-runtime/releases
-ARG GMMLIB_VERSION=22.0.2
-ARG IGC_VERSION=1.0.10395
-ARG NEO_VERSION=22.08.22549
-ARG LEVEL_ZERO_VERSION=1.3.22549
+ARG GMMLIB_VERSION=22.3.20
+ARG IGC_VERSION=1.0.17193.4
+ARG NEO_VERSION=24.26.30049.6
+ARG LEVEL_ZERO_VERSION=1.3.30049.6
 
 RUN apt-get update; apt-get install -y -y ca-certificates gnupg wget apt-transport-https curl \
  && wget -O - https://repo.jellyfin.org/jellyfin_team.gpg.key | apt-key add - \
@@ -27,7 +27,7 @@ RUN apt-get update; apt-get install -y -y ca-certificates gnupg wget apt-transpo
 # Do not use the intel-opencl-icd package from repo since they will not build with RELEASE_WITH_REGKEYS enabled.
  && mkdir intel-compute-runtime \
  && cd intel-compute-runtime \
- && wget https://github.com/intel/compute-runtime/releases/download/${NEO_VERSION}/intel-gmmlib_${GMMLIB_VERSION}_amd64.deb \
+ && wget https://github.com/intel/compute-runtime/releases/download/${NEO_VERSION}/libigdgmm12_${GMMLIB_VERSION}_amd64.deb \
  && wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-${IGC_VERSION}/intel-igc-core_${IGC_VERSION}_amd64.deb \
  && wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-${IGC_VERSION}/intel-igc-opencl_${IGC_VERSION}_amd64.deb \
  && wget https://github.com/intel/compute-runtime/releases/download/${NEO_VERSION}/intel-opencl-icd_${NEO_VERSION}_amd64.deb \
