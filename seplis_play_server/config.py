@@ -1,9 +1,11 @@
-import os, pathlib
+import os
+import pathlib
 import tempfile
 from typing import Literal
+
+import yaml
 from pydantic import AnyHttpUrl, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import yaml
 
 
 class ConfigLoggingModel(BaseModel):
@@ -26,7 +28,7 @@ class ConfigModel(BaseSettings):
     database: str
     secret: str | None = None
     scan: list[ConfigPlayScanModel] | None = None
-    media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg', 'm4v']
+    media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg', 'm4v', 'm2ts']
     subtitle_types: list[str] = ['srt', 'vtt', 'ass']
     subtitle_external_default_language: str = 'en'
     
