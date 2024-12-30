@@ -54,6 +54,8 @@ class Transcode_settings:
     max_width: int | None | Annotated[str, Query(max_length=0)] = None
     max_video_bitrate: int | None | Annotated[str, Query(max_length=0)] = None
     client_can_switch_audio_track: bool = False
+    # Currently there is an issue with Firefox and hls not being able to play if start time isn't 0 with video copy
+    force_transcode: bool = False
 
     @field_validator(
         'supported_video_codecs',
@@ -333,6 +335,9 @@ class Transcoder:
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
     def get_can_copy_video(self, check_key_frames=True):
+        if self.settings.force_transcode:
+            return False
+
         if self.video_input_codec not in self.settings.supported_video_codecs:
             logger.debug(
                 f'[{self.settings.session}] Input codec not supported by client: {self.video_input_codec}'
@@ -355,7 +360,7 @@ class Transcoder:
             and config.ffmpeg_tonemap_enabled
         ):
             logger.debug(
-                f'[{self.settings.session}] HDR format not supported by: {self.video_color.range_type}'
+                f'[{self.settings.session}] HDR format not supported by client: {self.video_color.range_type}'
             )
             return False
 
