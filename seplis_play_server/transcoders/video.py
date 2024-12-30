@@ -469,7 +469,14 @@ class Transcoder:
             else:
                 format_ = 'format=nv12'
 
-        width_filter = f'w={width}:h=-2' if width != self.video_stream['width'] else ''
+        width_filter = (
+            f'w={width}:h=-2'
+            if (width != self.video_stream['width'])
+            or (
+                self.video_input_codec == 'av1'
+            )  # [av1 @ 0x64e783171840] HW accel start frame fail. - Add the width.
+            else ''
+        )
         if width_filter and format_:
             format_ = ':' + format_
 
