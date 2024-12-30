@@ -171,7 +171,7 @@ class Transcoder:
             )
             try:
                 self.process.terminate()
-            except:
+            except Exception:
                 pass
             return False
 
@@ -335,7 +335,7 @@ class Transcoder:
     def get_can_copy_video(self, check_key_frames=True):
         if self.video_input_codec not in self.settings.supported_video_codecs:
             logger.debug(
-                f'[{self.settings.session}] Input codec not supported: {self.video_input_codec}'
+                f'[{self.settings.session}] Input codec not supported by client: {self.video_input_codec}'
             )
             return False
 
@@ -345,7 +345,7 @@ class Transcoder:
             > int(self.settings.supported_video_color_bit_depth)
         ):
             logger.debug(
-                f'[{self.settings.session}] Video color bit depth not supported: {self.video_color_bit_depth}'
+                f'[{self.settings.session}] Video color bit depth not supported by client: {self.video_color_bit_depth}'
             )
             return False
 
@@ -355,7 +355,7 @@ class Transcoder:
             and config.ffmpeg_tonemap_enabled
         ):
             logger.debug(
-                f'[{self.settings.session}] HDR format not supported: {self.video_color.range_type}'
+                f'[{self.settings.session}] HDR format not supported by: {self.video_color.range_type}'
             )
             return False
 
@@ -397,9 +397,17 @@ class Transcoder:
                 f'[{self.settings.session}] Input video container not supported: {self.metadata["format"]["format_name"]}'
             )
             return False
-
         if not self.settings.client_can_switch_audio_track:
-            if not self.audio_stream.get('disposition', {}).get('default'):
+            # It's possible that multiple audio streams are marked as default :)
+            default_count = 0
+            for stream in self.metadata['streams']:
+                if stream['codec_type'] == 'audio':
+                    if stream.get('disposition', {}).get('default'):
+                        default_count += 1
+
+            if not self.audio_stream.get('disposition', {}).get('default') or (
+                default_count > 1
+            ):
                 if self.audio_stream['group_index'] != 0:
                     logger.debug(
                         f"[{self.settings.session}] Client can't switch audio track"
