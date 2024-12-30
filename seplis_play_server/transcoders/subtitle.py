@@ -10,7 +10,9 @@ from seplis_play_server import config, database, logger, models
 from .video import stream_index_by_lang, to_subprocess_arguments
 
 
-async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
+async def get_subtitle_file(
+    metadata: Dict, lang: str, offset: int | float, output_format: str
+):
     if not lang:
         return
     sub_index = stream_index_by_lang(metadata, 'subtitle', lang)
@@ -23,9 +25,9 @@ async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
         {'-y': None},
         {'-vn': None},
         {'-an': None},
-        {'-c:s': 'webvtt'},
+        {'-c:s': output_format},
         {'-map': f'0:s:{sub_index.group_index}'},
-        {'-f': 'webvtt'},
+        {'-f': output_format},
         {'-': None},
     ]
     args = to_subprocess_arguments(args)
@@ -41,10 +43,12 @@ async def get_subtitle_file(metadata: Dict, lang: str, offset: int):
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
     v = stdout.decode('utf-8')
-    return v if not offset else offset_webvtt(v, offset)
+    return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
 
 
-async def get_subtitle_file_from_external(id_: int, offset: int):
+async def get_subtitle_file_from_external(
+    id_: int, offset: int | float, output_format: str
+):
     async with database.session() as session:
         sub_metadata = await session.scalar(
             sa.select(models.External_subtitle).where(
@@ -70,8 +74,8 @@ async def get_subtitle_file_from_external(id_: int, offset: int):
         {'-y': None},
         {'-vn': None},
         {'-an': None},
-        {'-c:s': 'webvtt'},
-        {'-f': 'webvtt'},
+        {'-c:s': output_format},
+        {'-f': output_format},
         {'-': None},
     ]
     args = to_subprocess_arguments(args)
@@ -87,7 +91,7 @@ async def get_subtitle_file_from_external(id_: int, offset: int):
         logger.warning(f'Subtitle file could not be exported!: {stderr}')
         return None
     v = stdout.decode('utf-8')
-    return v if not offset else offset_webvtt(v, offset)
+    return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
 
 
 async def get_subtitle_file_from_vtt(path: str):
@@ -99,7 +103,7 @@ async def get_subtitle_file_from_vtt(path: str):
         return data
 
 
-def offset_webvtt(content: str, offset: int):
+def offset_webvtt(content: str, offset: int | float):
     lines = content.split('\n')
     output_lines = []
     for line in lines:
