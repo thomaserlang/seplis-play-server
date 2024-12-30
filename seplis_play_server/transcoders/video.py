@@ -336,6 +336,7 @@ class Transcoder:
 
     def get_can_copy_video(self, check_key_frames=True):
         if self.settings.force_transcode:
+            logger.debug(f'[{self.settings.session}] Force transcode enabled')
             return False
 
         if self.video_input_codec not in self.settings.supported_video_codecs:
