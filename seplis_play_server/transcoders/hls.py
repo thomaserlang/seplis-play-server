@@ -133,7 +133,7 @@ class Hls_transcoder(video.Transcoder):
         l = []
         l.append('#EXTM3U')
         l.append(f'#EXT-X-STREAM-INF:{self.get_stream_info_string()}')
-        l.append(f'media.m3u8?{url_settings}')
+        l.append(f'/hls/media.m3u8?{url_settings}')
         return '\n'.join(l)
 
     def get_stream_info_string(self):
@@ -145,9 +145,6 @@ class Hls_transcoder(video.Transcoder):
             info.append(f'VIDEO-RANGE={self.video_color.range}')
         else:
             info.append('VIDEO-RANGE=SDR')
-        codecs = self.get_codecs_string()
-        if codecs:
-            info.append(f'CODECS="{",".join(codecs)}"')
         return ','.join(info)
 
     def get_segments(self):
@@ -327,8 +324,7 @@ class Hls_transcoder(video.Transcoder):
 
     def get_aac_codec_string(self, profile: str):
         r = 'mp4a'
-        profile = profile.lower()
-        if profile == 'he':
+        if profile.lower() == 'he':
             r += '.40.5'
         else:
             r += '.40.2'
