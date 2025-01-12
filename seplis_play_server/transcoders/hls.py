@@ -309,7 +309,7 @@ class Hls_transcoder(video.Transcoder):
             r += '.42E0'
         else:
             r += '.4240'
-        r + f'{level:02X}'
+        r += f'{level:02X}'
         return r
 
     def get_hevc_codec_string(self, profile: str, level: int):
