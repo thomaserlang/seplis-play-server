@@ -64,6 +64,7 @@ def range_requests_response(
         'content-type, accept-ranges, content-length, '
         'content-range, content-encoding'
     )
+    headers['cache-control'] = 'no-cache'
     start = 0
     end = file_size - 1
     status_code = status.HTTP_200_OK
