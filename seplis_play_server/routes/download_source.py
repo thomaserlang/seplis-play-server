@@ -1,5 +1,6 @@
 from mimetypes import guess_type
 import os
+from aiofile import async_open
 import anyio
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -101,8 +102,8 @@ def _get_range_header(range_header: str, file_size: int) -> tuple[int, int]:
 
 
 async def _send_bytes(path: str, start: int, end: int):
-    async with await anyio.open_file(path, mode="rb") as f:
-        await f.seek(start)
-        while (pos := await f.tell()) <= end:
+    async with async_open(path, mode="rb") as f:
+        f.seek(start)
+        while (pos := f.tell()) <= end:
             read_size = min(FileResponse.chunk_size, end + 1 - pos)
             yield await f.read(read_size)
