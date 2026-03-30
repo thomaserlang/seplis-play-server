@@ -1,29 +1,37 @@
 [project]
-name = "seplis_play_server"
+name = "seplis_play"
 version = "2.0"
 description = ""
+requires-python = ">=3.14"
+
 dependencies = [
-    "PyYAML==6.0.1",
-    "pydantic==2.7.1",
-    "pydantic-settings==2.2.1",
-    "sqlalchemy[asyncio]==2.0.30",
-    "alembic==1.13.1",
-    "sentry-sdk==2.2.0",
-    "aiomysql==0.2.0",
-    "aiosqlite==0.19.0",
-    "fastapi==0.111.0",
-    "pyjwt==2.8.0",
-    "uvicorn==0.29.0",
-    "click==8.1.7",
-    "pytest==8.2.0",
-    "pytest_asyncio==0.23.7",
-    "httpx==0.27.0",
-    "respx==0.21.1",
-    "orjson==3.10.3",
-    "guessit==3.8.0",
-    "watchfiles==0.21.0",
-    "aiofile==3.8.8",
-    "iso639-lang==2.2.3",
+    "PyYAML>=6.0.1",
+    "pydantic>=2.7.1",
+    "pydantic-settings>=2.2.1",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "python-dateutil>=2.9.0.post0",
+    "alembic>=1.13.1",
+    "sentry-sdk>=2.2.0",
+    "aiomysql>=0.2.0",
+    "aiosqlite>=0.19.0",
+    "fastapi>=0.111.0",
+    "pyjwt>=2.8.0",
+    "uvicorn>=0.29.0",
+    "click>=8.1.7",
+    "httpx>=0.27.0",
+    "respx>=0.21.1",
+    "orjson>=3.10.3",
+    "guessit>=3.8.0",
+    "watchfiles>=0.21.0",
+    "aiofile>=3.8.8",
+    "iso639-lang>=2.2.3",
+    "loguru>=0.7.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.0",
+    "pytest_asyncio>=0.23.7",
 ]
 
 [build-system]
@@ -31,10 +39,19 @@ build-backend = "flit_core.buildapi"
 requires = ["flit_core>=3.2,<4"]
 
 [tool.ruff]
-ignore = ["E712"]
+line-length = 90
 
 [tool.ruff.format]
 quote-style = "single"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I"]
+select = ["E", "F", "UP", "B", "I", "FAST", "ANN", "RET"]
+ignore = ['ANN401']
+
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

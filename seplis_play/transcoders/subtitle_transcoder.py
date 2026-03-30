@@ -1,0 +1,146 @@
+import asyncio
+import os
+
+import sqlalchemy as sa
+from aiofile import async_open
+
+from seplis_play import config, database, logger, models
+
+from .base_transcoder import stream_index_by_lang, to_subprocess_arguments
+
+
+async def get_subtitle_file(
+    metadata: dict, lang: str, offset: int | float, output_format: str
+) -> str | None:
+    if not lang:
+        return None
+    sub_index = stream_index_by_lang(metadata, 'subtitle', lang)
+    if not sub_index:
+        return None
+    args = [
+        {'-analyzeduration': '200M'},
+        {'-probesize': '200M'},
+        {'-i': metadata['format']['filename']},
+        {'-y': None},
+        {'-vn': None},
+        {'-an': None},
+        {'-c:s': output_format},
+        {'-map': f'0:s:{sub_index.group_index}'},
+        {'-f': output_format},
+        {'-': None},
+    ]
+    args = to_subprocess_arguments(args)
+    logger.debug(f'Subtitle args: {" ".join(args)}')
+    process = await asyncio.create_subprocess_exec(
+        os.path.join(config.ffmpeg_folder, 'ffmpeg'),
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        logger.warning(f'Subtitle file could not be exported!: {stderr}')
+        return None
+    v = stdout.decode('utf-8')
+    return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
+
+
+async def get_subtitle_file_from_external(
+    id_: int, offset: int | float, output_format: str
+) -> str | None:
+    async with database.session() as session:
+        sub_metadata = await session.scalar(
+            sa.select(models.ExternalSubtitle).where(
+                models.ExternalSubtitle.id == id_,
+            )
+        )
+    if not sub_metadata:
+        logger.warning(f'Subtitle file could not be found: {id_}')
+        return None
+
+    if sub_metadata.path.endswith('.vtt'):
+        vtt = await get_subtitle_file_from_vtt(sub_metadata.path)
+        if not vtt:
+            return None
+        return vtt if not offset else offset_webvtt(vtt, offset)
+
+    if not os.path.exists(sub_metadata.path):
+        logger.warning(f'Subtitle file could not be found: {sub_metadata.path}')
+        return None
+
+    args = [
+        {'-analyzeduration': '200M'},
+        {'-probesize': '200M'},
+        {'-i': sub_metadata.path},
+        {'-y': None},
+        {'-vn': None},
+        {'-an': None},
+        {'-c:s': output_format},
+        {'-f': output_format},
+        {'-': None},
+    ]
+    args = to_subprocess_arguments(args)
+    logger.debug(f'Subtitle args: {" ".join(args)}')
+    process = await asyncio.create_subprocess_exec(
+        os.path.join(config.ffmpeg_folder, 'ffmpeg'),
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        logger.warning(f'Subtitle file could not be exported!: {stderr}')
+        return None
+    v = stdout.decode('utf-8')
+    return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
+
+
+async def get_subtitle_file_from_vtt(path: str) -> str | None:
+    async with async_open(path, 'r') as afp:
+        data = await afp.read()
+        if not data:
+            logger.warning(f'Subtitle file could not be found: {path}')
+            return None
+        return data
+
+
+def offset_webvtt(content: str, offset: int | float) -> str:
+    lines = content.split('\n')
+    output_lines = []
+    for line in lines:
+        if '-->' in line:
+            times = line.split(' --> ')
+            if len(times) == 2:
+                start_time, end_time = times
+                try:
+                    start_seconds = sum(
+                        float(x) * 60**index
+                        for index, x in enumerate(reversed(start_time.split(':')))
+                    )
+                    end_seconds = sum(
+                        float(x) * 60**index
+                        for index, x in enumerate(reversed(end_time.split(':')))
+                    )
+                    new_start = start_seconds + offset
+                    new_end = end_seconds + offset
+
+                    new_start_formatted = (
+                        f'{int(new_start // 3600):02d}:'
+                        f'{int((new_start % 3600) // 60):02d}:'
+                        f'{new_start % 60:06.3f}'
+                    )
+                    new_end_formatted = (
+                        f'{int(new_end // 3600):02d}:'
+                        f'{int((new_end % 3600) // 60):02d}:'
+                        f'{new_end % 60:06.3f}'
+                    )
+
+                    output_lines.append(f'{new_start_formatted} --> {new_end_formatted}')
+                except ValueError:
+                    output_lines.append(line)
+            else:
+                output_lines.append(line)
+        else:
+            output_lines.append(line)
+
+    return '\n'.join(output_lines)

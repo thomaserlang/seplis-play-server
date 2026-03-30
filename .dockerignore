@@ -1,4 +1,5 @@
 *
 
-!/seplis_play_server
-!/requirements.txt
+!seplis_play
+!pyproject.toml
+!uv.lock

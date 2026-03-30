@@ -128,6 +128,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-seplis_play_server.yaml
+seplis_play.yaml
 docker-compose.yml
-!.env
+.devcontainer/.env
+seplis_play.db

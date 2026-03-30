@@ -71,7 +71,7 @@ spec:
             privileged: true
           volumeMounts:
             - name: config
-              mountPath: /etc/seplis_play_server.yaml
+              mountPath: /etc/seplis_play.yaml
               subPath: play-server.yml
             - name: data
               mountPath: /data
