@@ -920,11 +920,3 @@ async def close_transcoder(session: str) -> None:
         await sessions[session].ffmpeg_runner.cancel()
     except Exception as e:
         logger.error(f'[{session}] Failed to cancel transcoder: {e}')
-
-
-def subprocess_env(session: str, type_: str) -> dict[str, str]:
-    env = {}
-    env['FFREPORT'] = f"file='{
-        os.path.join(config.transcode_folder, f'ffmpeg_{session}_{type_}.log')
-    }':level={config.ffmpeg_loglevel}"
-    return env
