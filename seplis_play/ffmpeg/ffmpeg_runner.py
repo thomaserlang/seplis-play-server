@@ -6,36 +6,16 @@ and detecting stalls with graceful termination.
 """
 
 import asyncio
-import os
 import re
 import shlex
 import signal
-import subprocess
-import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
-from typing import Any
 
 from loguru import logger
 
-from .ffmpeg_constants import STDERR_BUFFER_SIZE, STDERR_EARLY_BUFFER_SIZE
-from .ffmpeg_job_context import JobContext
 from .ffmpeg_schemas import MediaInfo, TranscodeProgress
-
-
-@dataclass
-class StallConfig:
-    """Configuration for stall detection."""
-
-    base_timeout: float = 120.0
-    timeout_per_segment: float = 10.0
-    grace_period: float = 30.0
-    resolution_factor_4k: float = 2.0
-    resolution_factor_1080p: float = 1.5
-    hdr_grace_bonus: float = 15.0
 
 
 class ProgressParser:
@@ -160,357 +140,134 @@ class FFmpegRunner:
     - Graceful process termination with platform-specific signals
     """
 
-    def __init__(
-        self, stall_config: StallConfig | None = None, verbose: bool = False
-    ) -> None:
-        self.stall_config = stall_config or StallConfig()
-        self.verbose = verbose or os.environ.get('FFMPEG_VERBOSE', '').lower() in (
-            '1',
-            'true',
-            'yes',
-        )
-        self._cancel_event: asyncio.Event | None = None
+    def __init__(self) -> None:
         self._cancelled = asyncio.Event()
+        self._startup_event = asyncio.Event()
+        self._tasks: list[asyncio.Task] = []
+        self._stderr: list[str] = []
+        self.process: asyncio.subprocess.Process | None = None
+        self.cmd: list[str] = []
 
     async def cancel(self) -> None:
-        if self._cancel_event:
-            self._cancel_event.set()
-            await self._cancelled.wait()
-
-    def calculate_stall_timeout(
-        self, media_info: MediaInfo, segment_duration: int = 4
-    ) -> float:
-        """
-        Calculate dynamic stall timeout based on content.
-
-        Longer content or higher resolution may need more time per segment.
-        """
-        cfg = self.stall_config
-        base_timeout = cfg.base_timeout
-
-        segment_factor = cfg.timeout_per_segment * segment_duration
-
-        resolution_factor = 1.0
-        if media_info.width >= 3840:
-            resolution_factor = cfg.resolution_factor_4k
-        elif media_info.width >= 1920:
-            resolution_factor = cfg.resolution_factor_1080p
-
-        timeout = base_timeout + (segment_factor * resolution_factor)
-
-        logger.debug(
-            f'[FFmpegRunner] Stall timeout: {timeout:.0f}s '
-            f'(base={base_timeout}, segment={segment_duration}s, '
-            f'res_factor={resolution_factor})'
-        )
-
-        return timeout
-
-    def get_grace_period(self, media_info: MediaInfo) -> float:
-        """
-        Get grace period before stall detection begins.
-
-        First segments often take longer due to initialization.
-        """
-        cfg = self.stall_config
-        grace = cfg.grace_period
-
-        if media_info.width >= 3840:
-            grace += 30.0
-        elif media_info.width >= 1920:
-            grace += 15.0
-
-        if media_info.is_hdr:
-            grace += cfg.hdr_grace_bonus
-
-        return grace
+        if self.process is None:
+            return
+        await self._graceful_terminate(self.process)
+        await self._cancelled.wait()
 
     async def start(
         self,
         cmd: list[str],
         media_info: MediaInfo,
         progress_callback: Callable[[TranscodeProgress], None] | None = None,
-        stage: str = 'transcoding',
-        job_context: JobContext | None = None,
-        segment_duration: int = 4,
     ) -> asyncio.subprocess.Process | None:
-        """
-        Start FFmpeg process in the background with progress tracking.
-
-        Waits until FFmpeg produces its first progress output, then returns the
-        Process. Raises RuntimeError if FFmpeg exits before producing any output.
-        Monitoring tasks continue running in the background after this returns.
-        """
-        log_prefix = job_context.log_prefix if job_context else '[FFmpeg]'
+        log_prefix = '[FFmpeg]'
         logger.info(f'{log_prefix} Running: {" ".join(cmd)}')
+        self.cmd = cmd
 
-        stall_timeout = self.calculate_stall_timeout(media_info, segment_duration)
-        grace_period = self.get_grace_period(media_info)
-
-        process = await self._spawn_process(cmd, log_prefix)
-        if process is None:
+        self.process = await self._spawn_process(cmd, log_prefix)
+        if self.process is None:
             raise RuntimeError(f'{log_prefix} Failed to start FFmpeg process')
 
-        self._cancel_event = asyncio.Event()
-        startup_event = asyncio.Event()
-        progress = TranscodeProgress(stage=stage)
+        progress = TranscodeProgress()
         progress_parser = ProgressParser(throttle_interval=0.5)
-        state: dict[str, Any] = {
-            'stderr_lines': [],
-            'stderr_early': [],
-            'stdout_bytes': 0,
-            'last_progress_time': time.time(),
-            'last_file_size': 0,
-            'stalled': False,
-            'cancelled': False,
-            'start_time': time.time(),
-            'startup_event': startup_event,
-        }
-        job_dir = job_context.job_dir if job_context else None
 
-        asyncio.create_task(self._read_stdout(process, state, log_prefix))
-        asyncio.create_task(
-            self._read_stderr(
-                process,
-                state,
-                progress,
-                progress_parser,
-                media_info,
-                progress_callback,
-                log_prefix,
-            )
-        )
-        asyncio.create_task(
-            self._monitor_stall_and_cancel(
-                process,
-                state,
-                stall_timeout,
-                grace_period,
-                self._cancel_event,
-                job_dir,
-                log_prefix,
-            )
+        self._tasks.extend(
+            [
+                asyncio.create_task(
+                    self._read_stderr(
+                        self.process,
+                        media_info,
+                        progress,
+                        progress_parser,
+                        progress_callback,
+                        log_prefix,
+                    )
+                ),
+            ]
         )
 
-        await startup_event.wait()
-
-        if state.get('got_progress'):
-            return process
-
-        # No progress seen — process exited before producing any output
         try:
-            await asyncio.wait_for(process.wait(), timeout=5.0)
-        except TimeoutError:
-            pass
-        error = ''.join(state['stderr_lines'])
-        raise RuntimeError(
-            f'{log_prefix} FFmpeg exited with code {process.returncode}: {error}\n'
-            f'Command: {shlex.join(cmd)}'
-        )
+            await asyncio.wait_for(self._startup_event.wait(), timeout=120.0)
+            if self._cancelled.is_set():
+                raise TimeoutError()
+            return self.process
+        except TimeoutError as e:
+            raise RuntimeError(
+                f'{log_prefix} FFmpeg did not produce progress output  '
+                f'\n{"".join(self._stderr)}'
+                f'\nCommand: {shlex.join(cmd)}'
+            ) from e
 
     async def _spawn_process(
         self, cmd: list[str], log_prefix: str
     ) -> asyncio.subprocess.Process | None:
-        """Spawn FFmpeg subprocess with platform-specific options."""
         try:
-            kwargs: dict[str, Any] = {
-                'stdout': asyncio.subprocess.PIPE,
-                'stderr': asyncio.subprocess.PIPE,
-            }
-            if sys.platform == 'win32':
-                kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
-
-            return await asyncio.create_subprocess_exec(*cmd, **kwargs)
+            return await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
         except Exception as e:
-            logger.error(f'{log_prefix} Failed to start FFmpeg: {e}')
+            logger.error(
+                f'{log_prefix} Failed to start FFmpeg: {e}\nCommand: {shlex.join(cmd)}'
+            )
             return None
-
-    async def _read_stdout(
-        self, process: asyncio.subprocess.Process, state: dict[str, Any], log_prefix: str
-    ) -> None:
-        """Read stdout in separate task to prevent pipe blocking."""
-        try:
-            while True:
-                if process.stdout is None:
-                    break
-                chunk = await process.stdout.read(4096)
-                if not chunk:
-                    break
-                state['stdout_bytes'] += len(chunk)
-
-                if self.verbose:
-                    logger.debug(
-                        f'{log_prefix} stdout: '
-                        f'{chunk.decode("utf-8", errors="ignore")[:200]}'
-                    )
-        except Exception as e:
-            logger.debug(f'{log_prefix} stdout reader error: {e}')
 
     async def _read_stderr(
         self,
         process: asyncio.subprocess.Process,
-        state: dict[str, Any],
+        media_info: MediaInfo,
         progress: TranscodeProgress,
         parser: ProgressParser,
-        media_info: MediaInfo,
         progress_callback: Callable[[TranscodeProgress], None] | None,
         log_prefix: str,
     ) -> None:
-        """Read stderr and parse progress with throttled callbacks."""
         try:
             while True:
                 if process.stderr is None:
                     break
+
                 line = await process.stderr.readline()
                 if not line:
                     break
 
                 line_str = line.decode('utf-8', errors='ignore')
+                self._stderr.append(line_str)
+                if len(self._stderr) > 30:
+                    self._stderr.pop(0)
 
-                # Preserve early errors
-                if len(state['stderr_early']) < STDERR_EARLY_BUFFER_SIZE:
-                    state['stderr_early'].append(line_str)
-
-                # Rolling buffer for recent lines
-                state['stderr_lines'].append(line_str)
-                if len(state['stderr_lines']) > STDERR_BUFFER_SIZE:
-                    state['stderr_lines'].pop(0)
-
-                # Parse progress
                 if parser.should_parse(line_str):
-                    state['last_progress_time'] = time.time()
                     if parser.parse(line_str, progress, media_info):
-                        if not state.get('got_progress'):
-                            state['got_progress'] = True
-                            se: asyncio.Event | None = state.get('startup_event')
-                            if se:
-                                se.set()
+                        if progress.frame > 0:
+                            self._startup_event.set()
 
-                    # Throttled callback
                     if progress_callback and parser.should_callback():
                         try:
                             progress_callback(progress)
                         except Exception as e:
                             logger.warning(f'{log_prefix} Progress callback error: {e}')
         except Exception as e:
-            logger.debug(f'{log_prefix} stderr reader error: {e}')
+            logger.error(f'{log_prefix} stderr reader error: {e}')
         finally:
-            # Stderr pipe closed — all output is captured, unblock any startup waiter
-            startup_event = state.get('startup_event')
-            if startup_event and not startup_event.is_set():
-                startup_event.set()
-
-    async def _monitor_stall_and_cancel(
-        self,
-        process: asyncio.subprocess.Process,
-        state: dict[str, Any],
-        stall_timeout: float,
-        grace_period: float,
-        cancel_event: asyncio.Event | None,
-        job_dir: Path | None,
-        log_prefix: str,
-    ) -> None:
-        """Monitor for stalls and cancellation."""
-        zombie_check_interval = 5
-        iteration = 0
-
-        while process.returncode is None:
-            iteration += 1
-
-            # Zombie process detection
-            if iteration % zombie_check_interval == 0:
-                try:
-                    if sys.platform != 'win32':
-                        try:
-                            os.kill(process.pid, 0)
-                        except ProcessLookupError:
-                            logger.warning(
-                                f'{log_prefix} Process {process.pid} no longer exists'
-                            )
-                            state['stalled'] = True
-                            return
-                        except PermissionError:
-                            pass
-                except Exception:
-                    pass
-
-            # Check cancellation
-            if cancel_event and cancel_event.is_set():
-                state['cancelled'] = True
-                logger.info(f'{log_prefix} Cancellation requested')
-                await self._graceful_terminate(process)
-                self._cancelled.set()
-                return
-
-            elapsed = time.time() - state['start_time']
-            time_since_progress = time.time() - state['last_progress_time']
-
-            # Skip stall detection during grace period
-            if elapsed < grace_period:
-                await asyncio.sleep(1.0)
-                continue
-
-            # Check for stall
-            if time_since_progress > stall_timeout:
-                # Secondary check: file growth
-                if job_dir:
-                    new_size, has_grown = self._check_file_growth(
-                        job_dir, state['last_file_size']
-                    )
-                    if has_grown:
-                        state['last_progress_time'] = time.time()
-                        state['last_file_size'] = new_size
-                        logger.debug(
-                            f'{log_prefix} File growth detected, resetting stall timer'
-                        )
-                        await asyncio.sleep(1.0)
-                        continue
-
-                # Check stdout bytes
-                if state['stdout_bytes'] > 0:
-                    state['last_progress_time'] = time.time()
-                    state['stdout_bytes'] = 0
-                    await asyncio.sleep(1.0)
-                    continue
-
-                state['stalled'] = True
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+            if process.returncode and process.returncode > 0:
                 logger.error(
-                    f'{log_prefix} FFmpeg stalled for {stall_timeout:.0f}s, terminating'
+                    f'{log_prefix} FFmpeg exited with code {process.returncode}. '
+                    f'\n{"".join(self._stderr)}'
+                    f'\nCommand: {shlex.join(self.cmd)}'
                 )
                 await self._graceful_terminate(process)
-                return
-
-            await asyncio.sleep(1.0)
-
-    def _check_file_growth(self, job_dir: Path, last_size: int) -> tuple[int, bool]:
-        """Check if output files are growing."""
-        try:
-            total_size = 0
-            for f in job_dir.glob('**/*'):
-                if f.is_file():
-                    total_size += f.stat().st_size
-            return total_size, total_size > last_size
-        except Exception:
-            return last_size, False
+            self._startup_event.set()
 
     async def _graceful_terminate(self, process: asyncio.subprocess.Process) -> None:
-        """Gracefully terminate FFmpeg with platform-specific signals."""
-        if process.returncode is not None:
-            return
-
         try:
-            if sys.platform == 'win32':
-                try:
-                    process.send_signal(signal.CTRL_BREAK_EVENT)
-                except ProcessLookupError, OSError:
-                    pass
-            else:
-                try:
-                    process.send_signal(signal.SIGINT)
-                except ProcessLookupError, OSError:
-                    pass
+            if process.returncode is not None:
+                return
+            try:
+                process.send_signal(signal.SIGINT)
+            except ProcessLookupError, OSError:
+                pass
 
-            # Wait for graceful shutdown
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
                 logger.debug('[FFmpeg] Terminated gracefully')
@@ -518,7 +275,6 @@ class FFmpegRunner:
             except TimeoutError:
                 pass
 
-            # Escalate to SIGTERM
             try:
                 process.terminate()
                 await asyncio.wait_for(process.wait(), timeout=3.0)
@@ -527,7 +283,6 @@ class FFmpegRunner:
             except TimeoutError, ProcessLookupError, OSError:
                 pass
 
-            # Last resort: SIGKILL
             try:
                 process.kill()
                 await process.wait()
@@ -537,3 +292,9 @@ class FFmpegRunner:
 
         except Exception as e:
             logger.warning(f'[FFmpeg] Error during termination: {e}')
+        finally:
+            for task in self._tasks:
+                if not task.done():
+                    task.cancel()
+            self._cancelled.set()
+            self._startup_event.set()

@@ -5,8 +5,6 @@ from typing import Any
 
 @dataclass
 class TranscodeProgress:
-    """Progress information for a transcode job."""
-
     frame: int = 0
     fps: Decimal = Decimal(0)
     bitrate: str = '0kbits/s'
@@ -19,8 +17,6 @@ class TranscodeProgress:
 
 @dataclass
 class MediaInfo:
-    """Information about a media file."""
-
     duration: Decimal = Decimal(0)
     width: int = 0
     height: int = 0

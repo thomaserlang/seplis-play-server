@@ -177,7 +177,7 @@ class Transcoder:
         )
         self.ffmpeg_args: list[Mapping[str, str | float | int | None]] = []
         self.transcode_folder = ''
-        self.ffmpeg_runner = FFmpegRunner(verbose=config.debug)
+        self.ffmpeg_runner = FFmpegRunner()
 
     async def start(self) -> bool | bytes:
         self.transcode_folder = self.create_transcode_folder()
@@ -194,6 +194,8 @@ class Transcoder:
                 args,
                 media_info=self.media_info,
             )
+            if not self.process:
+                return False
         except RuntimeError as e:
             logger.error(f'[{self.settings.session}] {e}')
             return False
@@ -275,7 +277,6 @@ class Transcoder:
 
         if self.can_copy_video:
             return
-
         if config.ffmpeg_hwaccel == 'qsv':
             self.ffmpeg_args.extend(
                 [
@@ -283,6 +284,8 @@ class Transcoder:
                     {'-init_hw_device': 'qsv=qs@va'},
                     {'-filter_hw_device': 'qs'},
                     {'-hwaccel': 'vaapi'},
+                    {'-hwaccel_output_format': 'vaapi'},
+                    {'-noautorotate': None},
                 ]
             )
 
@@ -292,6 +295,7 @@ class Transcoder:
                     {'-init_hw_device': f'vaapi=va:{config.ffmpeg_hwaccel_device}'},
                     {'-hwaccel': 'vaapi'},
                     {'-hwaccel_output_format': 'vaapi'},
+                    {'-noautorotate': None},
                 ]
             )
 
