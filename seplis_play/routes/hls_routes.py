@@ -7,8 +7,8 @@ from seplis_play import logger
 
 from .. import config
 from ..dependencies import get_metadata
-from ..transcoders.base_transcoder import TranscodeSettings, sessions
-from ..transcoders.hls_transcoder import HlsTranscoder
+from ..transcoding.base_transcoder import TranscodeSettings, sessions
+from ..transcoding.hls_transcoder import HlsTranscoder
 
 router = APIRouter()
 

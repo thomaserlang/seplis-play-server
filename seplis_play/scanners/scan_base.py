@@ -30,13 +30,13 @@ class PlayScan:
         self.cleanup_mode = cleanup_mode
         self.parser = parser
 
-    async def save_item(self, item: Any, path: str) -> None:
+    async def save_item(self, item: Any, path: str) -> bool:
         raise NotImplementedError()
 
     def parse(self, filename: str) -> Any:
         raise NotImplementedError()
 
-    async def delete_path(self, path: str) -> None:
+    async def delete_path(self, path: str) -> bool:
         raise NotImplementedError()
 
     async def get_paths_matching_base_path(self, base_path: str) -> Any:
@@ -124,7 +124,9 @@ class PlayScan:
             raise Exception(f'ffprobe not found in "{config.ffmpeg_folder}"')
         logger.debug(f'Getting keyframes from: {path}')
         cmd = [
-            '-loglevel',
+            '-fflags',
+            '+genpts',
+            '-v',
             'error',
             '-skip_frame',
             'nokey',
@@ -163,7 +165,7 @@ class PlayScan:
         keyframes: list[str] = [
             r['pts_time']
             for r in parsed['packets']
-            if r['flags'].startswith('K') and r.get('pts_time')
+            if r['flags'].startswith('K_') and r.get('pts_time')
         ]
         return keyframes
 

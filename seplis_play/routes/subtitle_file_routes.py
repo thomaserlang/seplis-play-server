@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import StringConstraints
 
 from ..dependencies import get_metadata
-from ..transcoders.subtitle_transcoder import (
+from ..transcoding.subtitle_transcoder import (
     get_subtitle_file,
     get_subtitle_file_from_external,
 )

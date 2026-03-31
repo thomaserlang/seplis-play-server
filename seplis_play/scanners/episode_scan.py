@@ -80,10 +80,10 @@ class EpisodeScan(PlayScan):
         logger.info(f'[series-{episode.series_id}] No episode found for {value} ({path})')
         return False
 
-    async def save_item(self, item: schemas.ParsedFileEpisode, path: str) -> bool | None:
+    async def save_item(self, item: schemas.ParsedFileEpisode, path: str) -> bool:
         if not os.path.exists(path):
             logger.debug(f"Path doesn't exist any longer: {path}")
-            return None
+            return False
         async with database.session() as session:
             ep = await session.scalar(
                 sa.select(models.Episode).where(

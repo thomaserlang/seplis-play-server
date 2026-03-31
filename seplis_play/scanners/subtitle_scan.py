@@ -22,10 +22,10 @@ class SubtitleScan(PlayScan):
     SCANNER_NAME = 'Subtitles'
     SUPPORTED_EXTS = config.subtitle_types
 
-    async def save_item(self, item: SubtitleInfo, path: str) -> None:
+    async def save_item(self, item: SubtitleInfo, path: str) -> bool:
         if not os.path.exists(path):
             logger.error(f"Path doesn't exist any longer: {path}")
-            return
+            return False
         async with database.session() as session:
             s = await session.scalar(
                 sa.select(models.ExternalSubtitle).where(
@@ -43,6 +43,7 @@ class SubtitleScan(PlayScan):
                 )
                 await session.commit()
                 logger.info(f'Added subtitle: {path}')
+            return True
 
     def parse(self, filename: str) -> SubtitleInfo | None:
         data = filename.rsplit('.', 3)
@@ -74,7 +75,7 @@ class SubtitleScan(PlayScan):
             r['language'] = config.subtitle_external_default_language
         return r
 
-    async def delete_path(self, path: str) -> None:
+    async def delete_path(self, path: str) -> bool:
         async with database.session() as session:
             s = await session.scalar(
                 sa.select(models.ExternalSubtitle).where(
@@ -91,6 +92,7 @@ class SubtitleScan(PlayScan):
                 logger.info(f'Deleted subtitle: {path}')
             else:
                 logger.info(f'Subtitle not found: {path}')
+            return True
 
     async def get_paths_matching_base_path(self, base_path: str) -> list[str]:
         async with database.session() as session:
@@ -101,5 +103,5 @@ class SubtitleScan(PlayScan):
             )
             return [r for r in results]
 
-    async def get_metadata(self, path: str) -> None:
-        pass
+    async def get_metadata(self, path: str) -> dict[str, str]:
+        raise NotImplementedError()

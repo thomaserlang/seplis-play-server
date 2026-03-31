@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from .. import database, logger, models
 from ..dependencies import get_sources as deps_get_sources
-from ..transcoders.base_transcoder import (
+from ..transcoding.base_transcoder import (
     get_video_color,
     get_video_color_bit_depth,
     get_video_stream,

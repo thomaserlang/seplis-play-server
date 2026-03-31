@@ -3,7 +3,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 
 from seplis_play import config
-from seplis_play.transcoders import base_transcoder
+from seplis_play.transcoding import base_transcoder
 
 router = APIRouter()
 

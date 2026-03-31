@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..dependencies import get_metadata
-from ..transcoders.base_transcoder import Transcoder, TranscodeSettings
+from ..transcoding.base_transcoder import Transcoder, TranscodeSettings
 
 router = APIRouter()
 

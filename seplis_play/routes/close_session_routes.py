@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from ..transcoders.base_transcoder import close_session, sessions
+from ..transcoding.base_transcoder import close_session, sessions
 
 router = APIRouter()
 
@@ -9,4 +9,4 @@ router = APIRouter()
 async def get_close_session_route(session: str) -> None:
     if session not in sessions:
         raise HTTPException(404, 'Unknown session')
-    close_session(session)
+    await close_session(session)

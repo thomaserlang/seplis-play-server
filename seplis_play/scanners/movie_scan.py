@@ -36,10 +36,10 @@ class MovieScan(PlayScan):
         logger.info(f"{filename} doesn't look like a movie")
         return None
 
-    async def save_item(self, item: str, path: str) -> bool | None:
+    async def save_item(self, item: str, path: str) -> bool:
         if not os.path.exists(path):
             logger.debug(f"Path doesn't exist any longer: {path}")
-            return None
+            return False
         async with database.session() as session:
             movie = await session.scalar(
                 sa.select(models.Movie).where(
@@ -54,11 +54,11 @@ class MovieScan(PlayScan):
                     movie_id = await self.lookup(item)
                     if not movie_id:
                         logger.info(f'No movie found for {item} ({path})')
-                        return None
+                        return False
                 try:
                     metadata: dict[str, Any] = await self.get_metadata(path)
                     if not metadata:
-                        return None
+                        return False
 
                     if movie:
                         sql = (
@@ -104,7 +104,7 @@ class MovieScan(PlayScan):
             return
 
         if not config.server_id:
-            logger.warn(f'[movie-{movie_id}] No server_id specified')
+            logger.warning(f'[movie-{movie_id}] No server_id specified')
 
         r = await client.patch(
             f'/2/play-servers/{config.server_id}/movies',
@@ -209,7 +209,7 @@ class MovieScan(PlayScan):
             else:
                 logger.info(f'[movie-{movie_id}] Deleted from play server index')
         else:
-            logger.warn(f'[movie-{movie_id}] No server_id specified')
+            logger.warning(f'[movie-{movie_id}] No server_id specified')
 
     async def get_paths_matching_base_path(self, base_path: str) -> list[str]:
         async with database.session() as session:

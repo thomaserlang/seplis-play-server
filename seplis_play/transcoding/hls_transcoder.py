@@ -59,12 +59,6 @@ class HlsTranscoder(base_transcoder.Transcoder):
     def media_path(self) -> str:
         return os.path.join(self.transcode_folder, self.MEDIA_NAME)
 
-    async def wait_for_media(self) -> bool:
-        return await self.wait_for_segment(
-            self.transcode_folder,
-            self.settings.start_segment or 0,
-        )
-
     @classmethod
     async def wait_for_segment(cls, transcode_folder: str, segment: str | int) -> bool:
         async def wait_for() -> bool:
@@ -149,7 +143,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
         info.append(f'BANDWIDTH={video_bitrate}')
         info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
         if self.can_copy_video:
-            info.append(f'VIDEO-RANGE={self.video_color.range}')
+            info.append(f'VIDEO-RANGE={self.media_info.color_primaries}')
         else:
             info.append('VIDEO-RANGE=SDR')
         return ','.join(info)
@@ -170,14 +164,13 @@ class HlsTranscoder(base_transcoder.Transcoder):
                 result.append(keyframe - prev_keyframe)
                 prev_keyframe = keyframe
                 break_time += target_duration
-        result.append(Decimal(self.metadata['format']['duration']) - prev_keyframe)
+        result.append(self.media_info.duration - prev_keyframe)
         return result
 
     def calculate_equal_segments(self) -> list[Decimal]:
         target_duration = Decimal(self.segment_time())
-        duration = Decimal(self.metadata['format']['duration'])
-        segments = duration / target_duration
-        left_over = duration % target_duration
+        segments = self.media_info.duration / target_duration
+        left_over = self.media_info.duration % target_duration
         result = [target_duration for _ in range(int(segments))]
         if left_over:
             result.append(left_over)
@@ -189,9 +182,9 @@ class HlsTranscoder(base_transcoder.Transcoder):
         if self.can_copy_video:
             # It seems that sending ffmpeg the precise start time of
             # the keyframe often results in it starting a few seconds before.
-            # Adding 0.7 seconds seems to fix this most of the time,
-            # tried with 0.1, 0.3 and 0.5 which seemed to work less often.
-            r += Decimal(0.7)
+            # Adding 0.5 seconds seems to fix this most of the time,
+            # tried with 0.1 and 0.3 which seemed to work less often.
+            r += Decimal(0.5)
         return r
 
     def start_segment_from_start_time(self, start_time: Decimal) -> int:

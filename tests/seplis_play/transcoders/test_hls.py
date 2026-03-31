@@ -1,14 +1,16 @@
 from uuid import uuid4
 
 from seplis_play.testbase import run_file
-from seplis_play.transcoders.base_transcoder import TranscodeSettings
-from seplis_play.transcoders.hls_transcoder import HlsTranscoder
+from seplis_play.transcoding.base_transcoder import TranscodeSettings
+from seplis_play.transcoding.hls_transcoder import HlsTranscoder
 
 
 def test_hls() -> None:
     settings = TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
         supported_video_codecs=['h264'],
         supported_audio_codecs=['aac'],
         transcode_video_codec='h264',

@@ -28,8 +28,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     await database.engine.dispose()
 
-    from .transcoders.base_transcoder import close_session as cs
-    from .transcoders.base_transcoder import sessions
+    from .transcoding.base_transcoder import close_session as cs
+    from .transcoding.base_transcoder import sessions
 
     for session in list(sessions):
         cs(session)

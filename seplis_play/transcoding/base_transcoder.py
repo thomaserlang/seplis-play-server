@@ -19,6 +19,8 @@ from pydantic import (
 from pydantic.dataclasses import dataclass
 
 from seplis_play import config
+from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
+from seplis_play.ffmpeg.ffmpeg_schemas import MediaInfo
 
 
 @dataclass
@@ -119,9 +121,9 @@ class VideoColor(BaseModel):
 
 @pydataclass
 class SessionModel:
-    process: asyncio.subprocess.Process
+    ffmpeg_runner: FFmpegRunner
     call_later: asyncio.TimerHandle
-    transcode_folder: str | None | None = None
+    transcode_folder: str | None = None
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -149,9 +151,10 @@ class StreamIndex(BaseModel):
 
 
 class Transcoder:
-    def __init__(self, settings: TranscodeSettings, metadata: dict) -> None:
+    def __init__(self, settings: TranscodeSettings, metadata: dict[str, Any]) -> None:
         self.settings = settings
         self.metadata = metadata
+        self.media_info = MediaInfo.from_ffprobe(metadata)
         self.video_stream = self.get_video_stream()
         self.audio_stream = self.get_audio_stream()
         self.video_input_codec = self.video_stream['codec_name']
@@ -174,40 +177,30 @@ class Transcoder:
         )
         self.ffmpeg_args: list[Mapping[str, str | float | int | None]] = []
         self.transcode_folder = ''
+        self.ffmpeg_runner = FFmpegRunner(verbose=config.debug)
 
     async def start(self) -> bool | bytes:
         self.transcode_folder = self.create_transcode_folder()
 
         await self.set_ffmpeg_args()
 
-        args = to_subprocess_arguments(self.ffmpeg_args)
-        logger.info(f'[{self.settings.session}] FFmpeg start args: {" ".join(args)}')
-        self.process = await asyncio.create_subprocess_exec(
+        args = [
             os.path.join(config.ffmpeg_folder, 'ffmpeg'),
-            *args,
-            env=subprocess_env(self.settings.session, 'transcode'),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        self.register_session()
+            *to_subprocess_arguments(self.ffmpeg_args),
+        ]
 
-        logger.debug(f'[{self.settings.session}] Waiting for media')
-        ready = False
         try:
-            ready = await asyncio.wait_for(
-                self.wait_for_media(), timeout=60 if not config.debug else 20
+            self.process = await self.ffmpeg_runner.start(
+                args,
+                media_info=self.media_info,
             )
-        except TimeoutError:
-            logger.error(
-                f'[{self.settings.session}] Failed to create media, gave up waiting'
-            )
-            try:
-                self.process.terminate()
-            except Exception:
-                pass
+        except RuntimeError as e:
+            logger.error(f'[{self.settings.session}] {e}')
             return False
 
-        return ready
+        await self.register_session()
+
+        return True
 
     def ffmpeg_extend_args(self) -> None:
         pass
@@ -229,12 +222,12 @@ class Transcoder:
     def media_name(self) -> str:
         raise NotImplementedError()
 
-    def register_session(self) -> None:
+    async def register_session(self) -> None:
         loop = asyncio.get_event_loop()
         if self.settings.session in sessions:
-            close_transcoder(self.settings.session)
+            await close_transcoder(self.settings.session)
             logger.info(f'[{self.settings.session}] Reregistered')
-            sessions[self.settings.session].process = self.process
+            sessions[self.settings.session].ffmpeg_runner = self.ffmpeg_runner
             sessions[self.settings.session].call_later.cancel()
             sessions[self.settings.session].call_later = loop.call_later(
                 config.session_timeout, close_session_callback, self.settings.session
@@ -242,7 +235,7 @@ class Transcoder:
         else:
             logger.info(f'[{self.settings.session}] Registered')
             sessions[self.settings.session] = SessionModel(
-                process=self.process,
+                ffmpeg_runner=self.ffmpeg_runner,
                 transcode_folder=self.transcode_folder,
                 call_later=loop.call_later(
                     config.session_timeout,
@@ -259,9 +252,9 @@ class Transcoder:
             self.ffmpeg_args.append({'-fflags': '+genpts'})
         self.set_hardware_decoder()
         if self.settings.start_time:
-            self.ffmpeg_args.append(
-                {'-ss': str(self.settings.start_time.quantize(Decimal('0.000')))}
-            )
+            t = self.settings.start_time
+            ss = f'{int(t // 3600):02d}:{int((t % 3600) // 60):02d}:{float(t % 60):06.3f}'
+            self.ffmpeg_args.append({'-ss': ss})
         self.ffmpeg_args.extend(
             [
                 {'-i': f'file:{self.metadata["format"]["filename"]}'},
@@ -286,11 +279,10 @@ class Transcoder:
         if config.ffmpeg_hwaccel == 'qsv':
             self.ffmpeg_args.extend(
                 [
-                    {'-init_hw_device': 'vaapi=va:'},
+                    {'-init_hw_device': f'vaapi=va:{config.ffmpeg_hwaccel_device}'},
                     {'-init_hw_device': 'qsv=qs@va'},
                     {'-filter_hw_device': 'qs'},
                     {'-hwaccel': 'vaapi'},
-                    {'-hwaccel_output_format': 'vaapi'},
                 ]
             )
 
@@ -356,7 +348,7 @@ class Transcoder:
             width = self.video_stream['width']
 
         if config.ffmpeg_hwaccel_enabled:
-            self.ffmpeg_args.append({'-autoscale': '0'})
+            self.ffmpeg_args.append({'-noautoscale': None})
             if config.ffmpeg_hwaccel_low_powermode:
                 self.ffmpeg_args.append({'-low_power': '1'})
             if self.settings.transcode_video_codec == 'hevc':
@@ -412,8 +404,9 @@ class Transcoder:
             )
             return False
 
-        if self.settings.max_video_bitrate and self.settings.max_video_bitrate < int(
-            self.metadata['format']['bit_rate'] or 0
+        if (
+            self.settings.max_video_bitrate
+            and self.settings.max_video_bitrate < self.media_info.bitrate
         ):
             logger.debug(
                 f'[{self.settings.session}] Requested max bitrate is lower than input '
@@ -694,13 +687,11 @@ class Transcoder:
 
     def get_video_bitrate(self) -> int:
         if self.can_copy_video:
-            return int(self.metadata['format']['bit_rate'] or 0)
+            return self.media_info.bitrate
         return self.get_video_transcode_bitrate()
 
     def get_video_transcode_bitrate(self) -> int:
-        bitrate = self.settings.max_video_bitrate or int(
-            self.metadata['format']['bit_rate'] or 0
-        )
+        bitrate = self.settings.max_video_bitrate or self.media_info.bitrate
 
         if bitrate:
             upscaling = (
@@ -709,9 +700,7 @@ class Transcoder:
             )
             # only allow bitrate increase if upscaling
             if not upscaling:
-                bitrate = self._min_video_bitrate(
-                    int(self.metadata['format']['bit_rate']), bitrate
-                )
+                bitrate = self._min_video_bitrate(self.media_info.bitrate, bitrate)
 
             bitrate = self._video_scale_bitrate(
                 bitrate, self.video_input_codec, self.settings.transcode_video_codec
@@ -805,7 +794,7 @@ def to_subprocess_arguments(
         for key, value in a.items():
             arguments.append(key)
             if value is not None:
-                arguments.append(str(value))
+                arguments.append(f'{value}')
     return arguments
 
 
@@ -902,15 +891,15 @@ def stream_index_by_lang(
 
 def close_session_callback(session: str) -> None:
     logger.debug(f'[{session}] Session timeout reached')
-    close_session(session)
+    _ = asyncio.create_task(close_session(session))
 
 
-def close_session(session: str) -> None:
+async def close_session(session: str) -> None:
     if session not in sessions:
         logger.info(f'[{session}] Already closed')
         return
     logger.info(f'[{session}] Closing')
-    close_transcoder(session)
+    await close_transcoder(session)
     s = sessions[session]
     try:
         if s.transcode_folder:
@@ -926,11 +915,11 @@ def close_session(session: str) -> None:
     del sessions[session]
 
 
-def close_transcoder(session: str) -> None:
+async def close_transcoder(session: str) -> None:
     try:
-        sessions[session].process.kill()
-    except Exception:
-        pass
+        await sessions[session].ffmpeg_runner.cancel()
+    except Exception as e:
+        logger.error(f'[{session}] Failed to cancel transcoder: {e}')
 
 
 def subprocess_env(session: str, type_: str) -> dict[str, str]:
