@@ -42,6 +42,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
                 {'-hls_segment_type': 'fmp4'},
                 {'-hls_time': str(self.segment_time())},
                 {'-hls_list_size': '0'},
+                {'-hls_segment_options': 'movflags=+frag_discont'},
                 {'-start_number': str(self.settings.start_segment or 0)},
                 {'-y': None},
             ]

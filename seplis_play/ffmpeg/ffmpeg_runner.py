@@ -161,7 +161,7 @@ class FFmpegRunner:
         progress_callback: Callable[[TranscodeProgress], None] | None = None,
     ) -> asyncio.subprocess.Process | None:
         log_prefix = '[FFmpeg]'
-        logger.info(f'{log_prefix} Running: {" ".join(cmd)}')
+        logger.info(f'{log_prefix} Running: {shlex.join(cmd)}')
         self.cmd = cmd
 
         self.process = await self._spawn_process(cmd, log_prefix)

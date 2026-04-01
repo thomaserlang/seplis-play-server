@@ -277,6 +277,7 @@ class Transcoder:
 
         if self.can_copy_video:
             return
+
         if config.ffmpeg_hwaccel == 'qsv':
             self.ffmpeg_args.extend(
                 [
@@ -288,15 +289,10 @@ class Transcoder:
                     {'-noautorotate': None},
                 ]
             )
-
-        elif config.ffmpeg_hwaccel == 'vaapi':
-            self.ffmpeg_args.extend(
-                [
-                    {'-init_hw_device': f'vaapi=va:{config.ffmpeg_hwaccel_device}'},
-                    {'-hwaccel': 'vaapi'},
-                    {'-hwaccel_output_format': 'vaapi'},
-                    {'-noautorotate': None},
-                ]
+        else:
+            raise NotImplementedError(
+                f'Unsupported hwaccel: {config.ffmpeg_hwaccel} '
+                f'only supports qsv currently'
             )
 
     def set_video(self) -> None:
@@ -329,6 +325,7 @@ class Transcoder:
         self.ffmpeg_args.extend(
             [
                 {'-map': '0:v:0'},
+                {'-map': '-0:s'},
                 {'-c:v': codec},
             ]
         )
@@ -516,17 +513,17 @@ class Transcoder:
         if width_filter and format_:
             format_ = ':' + format_
 
-        if width_filter or pix_fmt != self.video_stream['pix_fmt']:
-            if config.ffmpeg_hwaccel == 'qsv':
-                vf.append(f'scale_vaapi={width_filter}{format_}')
-            else:
-                vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}{format_}')
-            if not tonemap:
-                vf.append(
-                    f'hwmap=derive_device={config.ffmpeg_hwaccel},format={config.ffmpeg_hwaccel}'
-                )
+        if config.ffmpeg_hwaccel == 'qsv':
+            format_ += ':extra_hw_frames=24'
+            vf.append(f'scale_vaapi={width_filter}{format_}')
+        else:
+            vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}{format_}')
 
-        if tonemap:
+        if not tonemap:
+            vf.append(
+                f'hwmap=derive_device={config.ffmpeg_hwaccel},format={config.ffmpeg_hwaccel}'
+            )
+        else:
             vf.extend(self.get_tonemap_hardware_filter())
 
         return vf
@@ -566,55 +563,57 @@ class Transcoder:
         )
 
     def get_quality_params(
-        self, width: int, codec_library: str
+        self, width: int, output_codec: str
     ) -> list[Mapping[str, str]]:
         params = []
         params.append({'-preset': config.ffmpeg_preset})
-        if codec_library == 'libx264':
-            params.append(
-                {
-                    '-x264opts': (
-                        'subme=0:me_range=4:rc_lookahead=10:me=hex:8x8dct=0:partitions=none'
-                    )
-                }
-            )
-            if width >= 3840:
-                params.append({'-crf': 18})
-            elif width >= 1920:
-                params.append({'-crf': 19})
-            else:
-                params.append({'-crf': 26})
+        match output_codec:
+            case 'libx264':
+                params.append(
+                    {
+                        '-x264opts': (
+                            'subme=0:me_range=4:rc_lookahead=10:me=hex:8x8dct=0:partitions=none'
+                        )
+                    }
+                )
+                if width >= 3840:
+                    params.append({'-crf': 18})
+                elif width >= 1920:
+                    params.append({'-crf': 19})
+                else:
+                    params.append({'-crf': 26})
 
-        elif codec_library == 'libx265':
-            params.extend(
-                [
+            case 'libx265':
+                params.append(
                     {'-x265-params:0': 'no-info=1'},
-                ]
-            )
-            if width >= 3840:
-                params.append({'-crf': 18})
-            elif width >= 3840:
-                params.append({'-crf': 20})
-            elif width >= 1920:
-                params.append({'-crf': 22})
-            else:
-                params.append({'-crf': 31})
+                )
+                if width >= 3840:
+                    params.append({'-crf': 18})
+                elif width >= 3840:
+                    params.append({'-crf': 20})
+                elif width >= 1920:
+                    params.append({'-crf': 22})
+                else:
+                    params.append({'-crf': 31})
 
-        elif codec_library == 'libvpx-vp9':
-            params.append({'-g': '24'})
-            if width >= 3840:
-                params.append({'-crf': 15})
-            elif width >= 2560:
-                params.append({'-crf': 24})
-            elif width >= 1920:
-                params.append({'-crf': 31})
-            else:
-                params.append({'-crf': 34})
+            case 'libvpx-vp9':
+                params.append({'-g': '24'})
+                if width >= 3840:
+                    params.append({'-crf': 15})
+                elif width >= 2560:
+                    params.append({'-crf': 24})
+                elif width >= 1920:
+                    params.append({'-crf': 31})
+                else:
+                    params.append({'-crf': 34})
 
-        elif codec_library == 'h264_qsv':
-            params.append({'-look_ahead': '0'})
+            case 'h264_qsv':
+                params.append({'-look_ahead': '0'})
 
-        params.extend(self.get_video_bitrate_params(codec_library))
+            case _:
+                pass
+
+        params.extend(self.get_video_bitrate_params(output_codec))
         return params
 
     def set_audio(self) -> None:
@@ -682,6 +681,19 @@ class Transcoder:
                 {'-maxrate': bitrate},
                 {'-bufsize': bitrate * 2},
             ]
+
+        if codec_library in ('h264_qsv', 'hevc_qsv', 'av1_qsv'):
+            params = []
+            if codec_library in ('h264_qsv', 'hevc_qsv'):
+                params.append({'-mbbrc': 1})
+            max_int = 2**31 - 1
+            params += [
+                {'-b:v': bitrate},
+                {'-maxrate': min(bitrate + 1, max_int)},
+                {'-rc_init_occupancy': min(bitrate * 2, max_int)},
+                {'-bufsize': min(bitrate * 4, max_int)},
+            ]
+            return params
 
         return [
             {'-b:v': bitrate},
