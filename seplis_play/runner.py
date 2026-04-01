@@ -33,7 +33,6 @@ def run() -> None:
         host='0.0.0.0',
         port=config.port,
         reload=config.debug,
-        access_log=False,
         proxy_headers=True,
         forwarded_allow_ips='*',
     )

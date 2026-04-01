@@ -1,4 +1,6 @@
+import math
 from typing import Annotated, Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
@@ -7,6 +9,7 @@ from seplis_play import logger
 
 from .. import config
 from ..dependencies import get_metadata
+from ..ffmpeg.ffmpeg_schemas import MediaInfo
 from ..transcoding.base_transcoder import TranscodeSettings, sessions
 from ..transcoding.hls_transcoder import HlsTranscoder
 
@@ -23,6 +26,27 @@ async def get_main_playlist_route(
         content=transcoder.generate_main_playlist(),
         media_type='application/x-mpegURL',
     )
+
+
+@router.get('/hls/subtitle.m3u8', name='Get HLS subtitle playlist')
+async def get_subtitle_playlist_route(
+    play_id: str,
+    source_index: int,
+    lang: str,
+    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+) -> Response:
+    duration = float(MediaInfo.from_ffprobe(metadata).duration)
+    params = urlencode({'play_id': play_id, 'source_index': source_index, 'lang': lang})
+    playlist = [
+        '#EXTM3U',
+        '#EXT-X-VERSION:3',
+        f'#EXT-X-TARGETDURATION:{math.ceil(duration)}',
+        '#EXT-X-PLAYLIST-TYPE:VOD',
+        f'#EXTINF:{duration:.3f},',
+        f'/subtitle-file?{params}',
+        '#EXT-X-ENDLIST',
+    ]
+    return Response(content='\n'.join(playlist), media_type='application/x-mpegURL')
 
 
 @router.get('/hls/media.m3u8', name='Get HLS media playlist')

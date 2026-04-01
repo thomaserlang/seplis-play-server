@@ -320,6 +320,11 @@ class Transcoder:
         else:
             if config.ffmpeg_hwaccel_enabled:
                 codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
+            if self.settings.start_time > 0:
+                t = self.settings.start_time
+                h, m, s = int(t // 3600), int((t % 3600) // 60), float(t % 60)
+                ts = f'{h:02d}:{m:02d}:{s:06.3f}'
+                self.ffmpeg_args.append({'-output_ts_offset': ts})
 
         self.video_output_codec_lib = codec
         self.ffmpeg_args.extend(

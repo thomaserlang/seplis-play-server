@@ -129,12 +129,44 @@ class HlsTranscoder(base_transcoder.Transcoder):
         playlist.append('#EXT-X-ENDLIST')
         return '\n'.join(playlist)
 
+    def get_subtitle_streams(self) -> list[tuple[int, dict]]:
+        result = []
+        for i, stream in enumerate(self.metadata.get('streams', [])):
+            if stream.get('codec_type') != 'subtitle':
+                continue
+            if stream.get('codec_name') in ('dvd_subtitle', 'hdmv_pgs_subtitle'):
+                continue
+            if 'tags' not in stream:
+                continue
+            result.append((i, stream))
+        return result
+
     def generate_main_playlist(self) -> str:
         settings_dict = self.settings.to_args_dict()
         url_settings = urlencode(settings_dict)
-        playlist = []
-        playlist.append('#EXTM3U')
-        playlist.append(f'#EXT-X-STREAM-INF:{self.get_stream_info_string()}')
+        subtitle_streams = self.get_subtitle_streams()
+        playlist = ['#EXTM3U']
+
+        for i, stream in subtitle_streams:
+            tags = stream['tags']
+            lang = tags.get('language') or tags.get('title') or 'und'
+            name = tags.get('title') or lang
+            lang_param = f'{lang}:{i}'
+            default = 'YES' if stream.get('disposition', {}).get('default') else 'NO'
+            subtitle_url = (
+                f'/hls/subtitle.m3u8?play_id={self.settings.play_id}'
+                f'&source_index={self.settings.source_index}&lang={lang_param}'
+            )
+            playlist.append(
+                f'#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",'
+                f'LANGUAGE="{lang}",NAME="{name}",DEFAULT={default},'
+                f'URI="{subtitle_url}"'
+            )
+
+        stream_inf = self.get_stream_info_string()
+        if subtitle_streams:
+            stream_inf += ',SUBTITLES="subs"'
+        playlist.append(f'#EXT-X-STREAM-INF:{stream_inf}')
         playlist.append(f'/hls/media.m3u8?{url_settings}')
         return '\n'.join(playlist)
 
@@ -143,8 +175,23 @@ class HlsTranscoder(base_transcoder.Transcoder):
         video_bitrate = self.get_video_bitrate()
         info.append(f'BANDWIDTH={video_bitrate}')
         info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
+        width = self.settings.max_width or self.media_info.width
+        if width > self.media_info.width:
+            width = self.media_info.width
+        if width != self.media_info.width:
+            height = round(self.media_info.height * width / self.media_info.width)
+        else:
+            height = self.media_info.height
+        info.append(f'RESOLUTION={width}x{height}')
         if self.can_copy_video:
-            info.append(f'VIDEO-RANGE={self.media_info.color_primaries}')
+            color_transfer = self.media_info.color_transfer.lower()
+            if color_transfer == 'smpte2084':
+                video_range = 'PQ'
+            elif color_transfer == 'arib-std-b67':
+                video_range = 'HLG'
+            else:
+                video_range = 'SDR'
+            info.append(f'VIDEO-RANGE={video_range}')
         else:
             info.append('VIDEO-RANGE=SDR')
         return ','.join(info)
