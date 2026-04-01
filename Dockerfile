@@ -36,11 +36,6 @@ RUN apt-get update && \
 
 FROM python:3.14-slim-trixie
 
-
-ENV ATTACHED_DEVICES_PERMS="/dev/dri /dev/dvb /dev/vchiq /dev/vc-mem /dev/video1? -type c"
-ENV NVIDIA_DRIVER_CAPABILITIES="compute,video,utility"
-ARG DEBIAN_FRONTEND="noninteractive"
-
 RUN \
   apt-get update && \
   apt-get install -y --no-install-recommends curl gnupg && \
@@ -61,7 +56,7 @@ RUN \
 ENV PYTHONPATH="." \
     UID=10000 \
     GID=10001 \
-    SEPLIS_PLAY_FFMPEG_FOLDER="/usr/lib/jellyfin-ffmpeg"
+    SEPLIS_PLAY__FFMPEG_FOLDER="/usr/lib/jellyfin-ffmpeg"
 
 COPY --from=pybuilder /usr/local/lib/libjemalloc.so /usr/local/lib/libjemalloc.so
 ENV LD_PRELOAD="/usr/local/lib/libjemalloc.so"
@@ -75,6 +70,3 @@ USER $UID:$GID
 WORKDIR /app
 
 ENTRYPOINT ["python", "seplis_play/runner.py"]
-
-# docker build -t seplis/seplis-play-server --rm . 
-# docker push seplis/seplis-play-server:latest 
