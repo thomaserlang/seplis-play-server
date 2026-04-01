@@ -73,6 +73,7 @@ async def get_media_segment_route(
         folder: str | None = sessions[settings.session].transcode_folder
 
         if folder is not None:
+            await manage_transcoder_pause(settings.session, folder, segment)
             if await HlsTranscoder.is_segment_ready(folder, segment):
                 return FileResponse(HlsTranscoder.get_segment_path(folder, segment))
 
@@ -140,4 +141,30 @@ async def start_transcode(
     ready = await transcode.start()
     if not ready:
         raise HTTPException(500, 'Transcode failed to start')
+    sessions[settings.session].segment_time = transcode.segment_time()
     return transcode
+
+
+async def manage_transcoder_pause(
+    session_key: str, folder: str, current_segment: int
+) -> None:
+    session_model = sessions.get(session_key)
+    if not session_model or not session_model.segment_time:
+        return
+    _, last = await HlsTranscoder.first_last_transcoded_segment(folder)
+    if last < 0:
+        return
+    ahead = last - current_segment
+    runner = session_model.ffmpeg_runner
+    if not runner.paused and ahead >= config.ffmpeg_pause_threshold_seconds:
+        runner.pause()
+        logger.info(
+            f'[{session_key}] Paused transcoder '
+            f'({ahead} segments ahead of {current_segment})'
+        )
+    elif runner.paused and ahead < config.ffmpeg_resume_threshold_seconds:
+        runner.resume()
+        logger.info(
+            f'[{session_key}] Resumed transcoder '
+            f'({ahead} segments ahead of {current_segment})'
+        )

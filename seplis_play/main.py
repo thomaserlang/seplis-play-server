@@ -19,6 +19,7 @@ from .routes import (
     subtitle_file_routes,
     thumbnails_routes,
 )
+from .transcoding.base_transcoder import close_session, sessions
 
 
 @asynccontextmanager
@@ -28,11 +29,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     await database.engine.dispose()
 
-    from .transcoding.base_transcoder import close_session as cs
-    from .transcoding.base_transcoder import sessions
-
     for session in list(sessions):
-        cs(session)
+        await close_session(session)
 
 
 app = FastAPI(title='SEPLIS Play Server', lifespan=lifespan)

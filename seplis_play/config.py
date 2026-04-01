@@ -89,7 +89,6 @@ class ConfigModel(BaseSettings):
         )
 
     debug: bool = False
-    test: bool = False
     database: str = 'sqlite:///seplis_play.db'
     secret: str | None = None
     scan: list[ConfigPlayScanModel] = []
@@ -98,8 +97,6 @@ class ConfigModel(BaseSettings):
     subtitle_external_default_language: str = 'en'
 
     ffmpeg_folder: Path = Path('/bin')
-    ffmpeg_loglevel: str | int = '40'
-    ffmpeg_logfile: Path | None = None
     ffmpeg_preset: Literal[
         'veryslow',
         'slower',
@@ -117,6 +114,9 @@ class ConfigModel(BaseSettings):
     ffmpeg_hwaccel_low_powermode: bool = False
     ffmpeg_tonemap_enabled: bool = True
     ffmpeg_segment_threshold_for_new_transcoder: int = 7
+    ffmpeg_pause_threshold_seconds: int = 300
+    ffmpeg_resume_threshold_seconds: int = 150
+
     extract_keyframes: bool = True
 
     port: int = 8003

@@ -12,7 +12,6 @@ async def play_db_test() -> AsyncGenerator[Database]:
     from seplis_play import scan
     from seplis_play.database import database
 
-    config.test = True
     config.server_id = '123'
     with tempfile.TemporaryDirectory() as dir:
         config.database = f'sqlite:///{dir}/db.sqlite'

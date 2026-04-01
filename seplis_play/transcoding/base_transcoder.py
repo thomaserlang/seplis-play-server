@@ -124,6 +124,7 @@ class SessionModel:
     ffmpeg_runner: FFmpegRunner
     call_later: asyncio.TimerHandle
     transcode_folder: str | None = None
+    segment_time: int = 0
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,

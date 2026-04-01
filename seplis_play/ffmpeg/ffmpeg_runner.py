@@ -147,10 +147,32 @@ class FFmpegRunner:
         self._stderr: list[str] = []
         self.process: asyncio.subprocess.Process | None = None
         self.cmd: list[str] = []
+        self.paused = False
+
+    def pause(self) -> None:
+        if self.process is None or self.process.returncode is not None or self.paused:
+            return
+        try:
+            self.process.send_signal(signal.SIGSTOP)
+            self.paused = True
+            logger.debug('[FFmpeg] Paused (SIGSTOP)')
+        except (ProcessLookupError, OSError):
+            pass
+
+    def resume(self) -> None:
+        if self.process is None or self.process.returncode is not None or not self.paused:
+            return
+        try:
+            self.process.send_signal(signal.SIGCONT)
+            self.paused = False
+            logger.debug('[FFmpeg] Resumed (SIGCONT)')
+        except (ProcessLookupError, OSError):
+            pass
 
     async def cancel(self) -> None:
         if self.process is None:
             return
+        self.resume()  # Wake up if paused so SIGINT is handled promptly
         await self._graceful_terminate(self.process)
         await self._cancelled.wait()
 
