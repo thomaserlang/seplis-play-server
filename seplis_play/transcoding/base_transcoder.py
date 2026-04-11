@@ -94,6 +94,7 @@ class TranscodeSettings:
         'supported_audio_codecs',
         'supported_hdr_formats',
         'supported_video_containers',
+        mode='before',
     )
     @classmethod
     def comma_string(cls, v: list[str]) -> list[str]:
