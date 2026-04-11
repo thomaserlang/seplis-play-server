@@ -43,7 +43,7 @@ class TranscodeSettings:
         default_factory=lambda: ['h264']
     )
     format: Literal['pipe', 'hls', 'hls.js'] = 'hls'
-    transcode_video_codec: Literal['h264', 'hevc', 'vp9'] = 'h264'
+    transcode_video_codec: Literal['h264', 'hevc', 'vp9', 'av1'] = 'h264'
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3'] = 'aac'
 
     supported_video_color_bit_depth: Annotated[int, Query(ge=8)] = 10
