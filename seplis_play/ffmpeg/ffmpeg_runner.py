@@ -156,7 +156,7 @@ class FFmpegRunner:
             self.process.send_signal(signal.SIGSTOP)
             self.paused = True
             logger.debug('[FFmpeg] Paused (SIGSTOP)')
-        except (ProcessLookupError, OSError):
+        except ProcessLookupError, OSError:
             pass
 
     def resume(self) -> None:
@@ -166,7 +166,7 @@ class FFmpegRunner:
             self.process.send_signal(signal.SIGCONT)
             self.paused = False
             logger.debug('[FFmpeg] Resumed (SIGCONT)')
-        except (ProcessLookupError, OSError):
+        except ProcessLookupError, OSError:
             pass
 
     async def cancel(self) -> None:

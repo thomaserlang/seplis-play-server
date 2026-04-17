@@ -302,8 +302,7 @@ class Transcoder:
             return DecisionCheck(
                 allowed=False,
                 reasons=[
-                    'Input codec not supported by client: '
-                    f'{self.video_input_codec}'
+                    f'Input codec not supported by client: {self.video_input_codec}'
                 ],
             )
 
@@ -328,8 +327,7 @@ class Transcoder:
             return DecisionCheck(
                 allowed=False,
                 reasons=[
-                    'HDR format not supported by client: '
-                    f'{self.video_color.range_type}'
+                    f'HDR format not supported by client: {self.video_color.range_type}'
                 ],
             )
 
@@ -423,7 +421,9 @@ class Transcoder:
         return DecisionCheck(allowed=True, reasons=['Direct play is supported'])
 
     def get_can_device_direct_play(self) -> bool:
-        log_decision_check(self.settings.session, 'direct play', self.direct_play_decision)
+        log_decision_check(
+            self.settings.session, 'direct play', self.direct_play_decision
+        )
         return self.direct_play_decision.allowed
 
     def build_transcode_decision(self) -> TranscodeDecision:
@@ -653,9 +653,7 @@ class Transcoder:
         if stream['codec_name'] not in self.settings.supported_audio_codecs:
             return DecisionCheck(
                 allowed=False,
-                reasons=[
-                    f'Input audio codec not supported: {stream["codec_name"]}'
-                ],
+                reasons=[f'Input audio codec not supported: {stream["codec_name"]}'],
             )
 
         return DecisionCheck(

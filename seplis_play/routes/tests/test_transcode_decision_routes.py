@@ -128,9 +128,7 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
 
     assert response.status_code == 200
     assert response.json()['can_direct_play'] is True
-    assert response.json()['transcode_decision_url'] == (
-        f'/transcode-decision/{session}'
-    )
+    assert response.json()['transcode_decision_url'] == (f'/transcode-decision/{session}')
 
     decision = Transcoder(
         settings=TranscodeSettings(

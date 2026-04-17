@@ -37,9 +37,7 @@ async def test_subtitles(play_db_test: Database) -> None:
             open(path, 'w').close()
             paths.append(path)
 
-        scanner = SubtitleScan(
-            scan_path=tmpdir, cleanup_mode=True, make_thumbnails=False
-        )
+        scanner = SubtitleScan(scan_path=tmpdir, cleanup_mode=True, make_thumbnails=False)
         await scanner.scan()
 
         async with play_db_test.session() as session:

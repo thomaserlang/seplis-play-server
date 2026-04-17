@@ -18,9 +18,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
     MEDIA_NAME: str = 'media.m3u8'
     CODECES = ('h264', 'hevc', 'av1')
 
-    def __init__(
-        self, settings: TranscodeSettings, metadata: dict[str, Any]
-    ) -> None:
+    def __init__(self, settings: TranscodeSettings, metadata: dict[str, Any]) -> None:
         if settings.transcode_video_codec not in self.CODECES:
             settings.transcode_video_codec = 'h264'
         settings.supported_video_codecs = [

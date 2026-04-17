@@ -90,7 +90,9 @@ def test_transcode_settings_list_fields_accept_comma_separated_query_params() ->
     assert response.json()['supported_video_codecs'] == ['h264', 'av1']
 
 
-def test_transcode_settings_include_subtitles_defaults_to_false_and_can_be_enabled() -> None:
+def test_transcode_settings_include_subtitles_defaults_to_false_and_can_be_enabled() -> (
+    None
+):
     client = _create_client()
 
     default_response = client.get(
