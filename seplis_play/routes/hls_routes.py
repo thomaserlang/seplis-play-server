@@ -28,6 +28,21 @@ async def get_main_playlist_route(
     )
 
 
+@router.get('/hls/media.m3u8', name='Get HLS media playlist')
+async def get_media_route(
+    settings: Annotated[TranscodeSettings, Depends()],
+    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+) -> Response:
+    if settings.session in sessions:
+        transcoder = HlsTranscoder(settings=settings, metadata=metadata)
+    else:
+        transcoder = await start_transcode(settings)
+    return Response(
+        content=transcoder.generate_media_playlist(),
+        media_type='application/x-mpegURL',
+    )
+
+
 @router.get('/hls/subtitle.m3u8', name='Get HLS subtitle playlist')
 async def get_subtitle_playlist_route(
     play_id: str,
@@ -47,21 +62,6 @@ async def get_subtitle_playlist_route(
         '#EXT-X-ENDLIST',
     ]
     return Response(content='\n'.join(playlist), media_type='application/x-mpegURL')
-
-
-@router.get('/hls/media.m3u8', name='Get HLS media playlist')
-async def get_media_route(
-    settings: Annotated[TranscodeSettings, Depends()],
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
-) -> Response:
-    if settings.session in sessions:
-        transcoder = HlsTranscoder(settings=settings, metadata=metadata)
-    else:
-        transcoder = await start_transcode(settings)
-    return Response(
-        content=transcoder.generate_media_playlist(),
-        media_type='application/x-mpegURL',
-    )
 
 
 @router.get('/hls/media{segment}.m4s', name='Get HLS media segment')

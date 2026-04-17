@@ -29,10 +29,11 @@ async def request_media_route(
 ) -> RequestMedia:
     t = Transcoder(settings=settings, metadata=metadata)
 
+    hls_file = 'main' if settings.include_subtitles else 'media'
     return RequestMedia(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
         can_direct_play=t.transcode_decision.direct_play.allowed,
-        hls_url=f'/hls/main.m3u8?{urlencode(settings.to_args_dict())}',
+        hls_url=f'/hls/{hls_file}.m3u8?{urlencode(settings.to_args_dict())}',
         keep_alive_url=f'/keep-alive/{settings.session}',
         close_session_url=f'/close-session/{settings.session}',
         transcode_decision_url=f'/transcode-decision/{settings.session}',
