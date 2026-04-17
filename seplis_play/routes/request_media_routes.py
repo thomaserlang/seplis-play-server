@@ -18,6 +18,7 @@ class RequestMedia(BaseModel):
     hls_url: str
     keep_alive_url: str
     close_session_url: str
+    transcode_decision_url: str
 
 
 @router.get('/request-media', name='Request media')
@@ -30,8 +31,9 @@ async def request_media_route(
 
     return RequestMedia(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
-        can_direct_play=t.get_can_device_direct_play() and t.can_copy_audio,
+        can_direct_play=t.transcode_decision.direct_play.allowed,
         hls_url=f'/hls/main.m3u8?{urlencode(settings.to_args_dict())}',
         keep_alive_url=f'/keep-alive/{settings.session}',
         close_session_url=f'/close-session/{settings.session}',
+        transcode_decision_url=f'/transcode-decision/{settings.session}',
     )

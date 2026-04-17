@@ -18,6 +18,7 @@ from .routes import (
     sources_routes,
     subtitle_file_routes,
     thumbnails_routes,
+    transcode_decision_routes,
 )
 from .transcoding.base_transcoder import close_session, sessions
 
@@ -49,6 +50,7 @@ app.include_router(subtitle_file_routes.router)
 app.include_router(close_session_routes.router)
 app.include_router(download_source_routes.router)
 app.include_router(request_media_routes.router)
+app.include_router(transcode_decision_routes.router)
 app.include_router(hls_routes.router)
 
 # The media.m3u8 gets updated too fast and the browser gets an old version

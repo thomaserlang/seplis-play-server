@@ -23,12 +23,28 @@ class VideoColor(BaseModel):
     range_type: str
 
 
+class DecisionCheck(BaseModel):
+    allowed: bool
+    reasons: list[str]
+
+
+class TranscodeDecision(BaseModel):
+    session: str
+    video_copy: DecisionCheck
+    audio_copy: DecisionCheck
+    direct_play: DecisionCheck
+    video_transcode_required: bool
+    audio_transcode_required: bool
+    transcode_required: bool
+
+
 @pydataclass
 class SessionModel:
     ffmpeg_runner: FFmpegRunner
     call_later: asyncio.TimerHandle
     transcode_folder: str | None = None
     segment_time: int = 0
+    transcode_decision: TranscodeDecision | None = None
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -66,8 +82,13 @@ class Transcoder:
         self.audio_input_codec = self.audio_stream['codec_name']
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
-        self.can_copy_video = self.get_can_copy_video()
-        self.can_copy_audio = self.get_can_copy_audio()
+        self.video_copy_decision = self.evaluate_can_copy_video()
+        self.can_copy_video = self.video_copy_decision.allowed
+        self.audio_copy_decision = self.evaluate_can_copy_audio()
+        self.can_copy_audio = self.audio_copy_decision.allowed
+        self.direct_play_decision = self.evaluate_can_device_direct_play()
+        self.transcode_decision = self.build_transcode_decision()
+        store_transcode_decision(self.transcode_decision)
         self.video_output_codec_lib = None
         self.audio_output_codec_lib = None
         self.video_output_codec = (
@@ -135,6 +156,7 @@ class Transcoder:
             await close_transcoder(self.settings.session)
             logger.info(f'[{self.settings.session}] Reregistered')
             sessions[self.settings.session].ffmpeg_runner = self.ffmpeg_runner
+            sessions[self.settings.session].transcode_decision = self.transcode_decision
             sessions[self.settings.session].call_later.cancel()
             sessions[self.settings.session].call_later = loop.call_later(
                 config.session_timeout, close_session_callback, self.settings.session
@@ -149,6 +171,7 @@ class Transcoder:
                     close_session_callback,
                     self.settings.session,
                 ),
+                transcode_decision=self.transcode_decision,
             )
 
     async def set_ffmpeg_args(self) -> None:
@@ -271,83 +294,115 @@ class Transcoder:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
 
-    def get_can_copy_video(self, check_key_frames: bool = True) -> bool:
+    def evaluate_can_copy_video(self, check_key_frames: bool = True) -> DecisionCheck:
         if self.settings.force_transcode:
-            logger.debug(f'[{self.settings.session}] Force transcode enabled')
-            return False
+            return DecisionCheck(allowed=False, reasons=['Force transcode enabled'])
 
         if self.video_input_codec not in self.settings.supported_video_codecs:
-            logger.debug(
-                f'[{self.settings.session}] Input codec not '
-                f'supported by client: {self.video_input_codec}'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Input codec not supported by client: '
+                    f'{self.video_input_codec}'
+                ],
             )
-            return False
 
         if (
             self.settings.supported_video_color_bit_depth
             and self.video_color_bit_depth
             > int(self.settings.supported_video_color_bit_depth)
         ):
-            logger.debug(
-                f'[{self.settings.session}] Video color bit depth not '
-                f'supported by client: {self.video_color_bit_depth}'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Video color bit depth not supported by client: '
+                    f'{self.video_color_bit_depth}'
+                ],
             )
-            return False
 
         if (
             self.video_color.range == 'hdr'
             and self.video_color.range_type not in self.settings.supported_hdr_formats
             and config.ffmpeg_tonemap_enabled
         ):
-            logger.debug(
-                f'[{self.settings.session}] HDR format not supported by '
-                f'client: {self.video_color.range_type}'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'HDR format not supported by client: '
+                    f'{self.video_color.range_type}'
+                ],
             )
-            return False
 
         if (
             self.settings.max_width
             and self.settings.max_width < self.video_stream['width']
         ):
-            logger.debug(
-                f'[{self.settings.session}] Requested width is lower than input '
-                f'width ({self.settings.max_width} < {self.video_stream["width"]})'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Requested width is lower than input width '
+                    f'({self.settings.max_width} < {self.video_stream["width"]})'
+                ],
             )
-            return False
 
         if (
             self.settings.max_video_bitrate
             and self.settings.max_video_bitrate < self.media_info.bitrate
         ):
-            logger.debug(
-                f'[{self.settings.session}] Requested max bitrate is lower than input '
-                f'bitrate ({self.settings.max_video_bitrate} <'
-                f' {self.get_video_transcode_bitrate()})'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Requested max bitrate is lower than input bitrate '
+                    f'({self.settings.max_video_bitrate} < '
+                    f'{self.get_video_transcode_bitrate()})'
+                ],
             )
-            return False
 
         # We need the key frames to determin the actually start time when seeking
         # otherwise the subtitles will be out of sync
         if check_key_frames and not self.metadata.get('keyframes'):
-            logger.debug(f'[{self.settings.session}] No key frames in metadata')
-            return False
+            return DecisionCheck(allowed=False, reasons=['No key frames in metadata'])
 
-        logger.debug(f'[{self.settings.session}] Can copy video')
-        return True
+        return DecisionCheck(allowed=True, reasons=['Video can be copied'])
 
-    def get_can_device_direct_play(self) -> bool:
-        if not self.get_can_copy_video(check_key_frames=False):
-            return False
+    def get_can_copy_video(self, check_key_frames: bool = True) -> bool:
+        decision = (
+            self.video_copy_decision
+            if check_key_frames
+            else self.evaluate_can_copy_video(check_key_frames=False)
+        )
+        log_decision_check(self.settings.session, 'video copy', decision)
+        return decision.allowed
+
+    def evaluate_can_device_direct_play(self) -> DecisionCheck:
+        video_copy = self.evaluate_can_copy_video(check_key_frames=False)
+        if not video_copy.allowed:
+            return DecisionCheck(
+                allowed=False,
+                reasons=['Direct play requires video copy', *video_copy.reasons],
+            )
+
+        if not self.audio_copy_decision.allowed:
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Direct play requires audio copy',
+                    *self.audio_copy_decision.reasons,
+                ],
+            )
 
         if not any(
             fmt in self.settings.supported_video_containers
             for fmt in self.metadata['format']['format_name'].split(',')
         ):
-            logger.debug(
-                f'[{self.settings.session}] Input video container not '
-                f'supported: {self.metadata["format"]["format_name"]}'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Input video container not supported: '
+                    f'{self.metadata["format"]["format_name"]}'
+                ],
             )
-            return False
+
         if not self.settings.client_can_switch_audio_track:
             # It's possible that multiple audio streams are marked as default :)
             default_count = 0
@@ -360,13 +415,37 @@ class Transcoder:
                 default_count > 1
             ):
                 if self.audio_stream['group_index'] != 0:
-                    logger.debug(
-                        f"[{self.settings.session}] Client can't switch audio track"
+                    return DecisionCheck(
+                        allowed=False,
+                        reasons=["Client can't switch audio track"],
                     )
-                    return False
 
-        logger.debug(f'[{self.settings.session}] Can direct play video')
-        return True
+        return DecisionCheck(allowed=True, reasons=['Direct play is supported'])
+
+    def get_can_device_direct_play(self) -> bool:
+        log_decision_check(self.settings.session, 'direct play', self.direct_play_decision)
+        return self.direct_play_decision.allowed
+
+    def build_transcode_decision(self) -> TranscodeDecision:
+        audio_transcode_required = not (self.can_copy_video and self.can_copy_audio)
+        audio_copy = self.audio_copy_decision
+        if not self.can_copy_video:
+            audio_copy = DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Audio copy disabled while video is transcoded to avoid sync issues'
+                ],
+            )
+
+        return TranscodeDecision(
+            session=self.settings.session,
+            video_copy=self.video_copy_decision,
+            audio_copy=audio_copy,
+            direct_play=self.direct_play_decision,
+            video_transcode_required=not self.can_copy_video,
+            audio_transcode_required=audio_transcode_required,
+            transcode_required=(not self.can_copy_video) or audio_transcode_required,
+        )
 
     def get_video_filter(self, width: int) -> list[str] | None:
         vf = []
@@ -556,30 +635,37 @@ class Transcoder:
             ]
         )
 
-    def get_can_copy_audio(self) -> bool:
+    def evaluate_can_copy_audio(self) -> DecisionCheck:
         stream = self.audio_stream
 
         if (
             self.settings.max_audio_channels
             and self.settings.max_audio_channels < stream['channels']
         ):
-            logger.debug(
-                f'[{self.settings.session}] Requested audio channels is lower than input '
-                f'channels ({self.settings.max_audio_channels} < {stream["channels"]})'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    'Requested audio channels is lower than input channels '
+                    f'({self.settings.max_audio_channels} < {stream["channels"]})'
+                ],
             )
-            return False
 
         if stream['codec_name'] not in self.settings.supported_audio_codecs:
-            logger.debug(
-                f'[{self.settings.session}] Input audio codec not'
-                f' supported: {stream["codec_name"]}'
+            return DecisionCheck(
+                allowed=False,
+                reasons=[
+                    f'Input audio codec not supported: {stream["codec_name"]}'
+                ],
             )
-            return False
 
-        logger.debug(
-            f'[{self.settings.session}] Can copy audio, codec: {stream["codec_name"]}'
+        return DecisionCheck(
+            allowed=True,
+            reasons=[f'Audio can be copied, codec: {stream["codec_name"]}'],
         )
-        return True
+
+    def get_can_copy_audio(self) -> bool:
+        log_decision_check(self.settings.session, 'audio copy', self.audio_copy_decision)
+        return self.audio_copy_decision.allowed
 
     def get_video_bitrate_params(
         self, codec_library: str
@@ -846,3 +932,29 @@ async def close_transcoder(session: str) -> None:
         await sessions[session].ffmpeg_runner.cancel()
     except Exception as e:
         logger.error(f'[{session}] Failed to cancel transcoder: {e}')
+
+
+def log_decision_check(session: str, label: str, decision: DecisionCheck) -> None:
+    status = 'allowed' if decision.allowed else 'blocked'
+    logger.debug(f'[{session}] {label}: {status} ({", ".join(decision.reasons)})')
+
+
+def summarize_transcode_decision(decision: TranscodeDecision) -> str:
+    video_status = 'transcode' if decision.video_transcode_required else 'copy'
+    audio_status = 'transcode' if decision.audio_transcode_required else 'copy'
+    direct_play_status = 'yes' if decision.direct_play.allowed else 'no'
+    return (
+        f'video={video_status} ({", ".join(decision.video_copy.reasons)}) | '
+        f'audio={audio_status} ({", ".join(decision.audio_copy.reasons)}) | '
+        f'direct_play={direct_play_status} ({", ".join(decision.direct_play.reasons)})'
+    )
+
+
+def store_transcode_decision(decision: TranscodeDecision) -> None:
+    previous = sessions.get(decision.session)
+    if previous and previous.transcode_decision == decision:
+        return
+    logger.info(
+        f'[{decision.session}] Transcode decision: '
+        f'{summarize_transcode_decision(decision)}'
+    )
