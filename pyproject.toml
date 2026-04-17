@@ -50,6 +50,7 @@ ignore = ['ANN401']
 
 
 [tool.pytest.ini_options]
+testpaths = ["seplis_play"]
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore::DeprecationWarning",

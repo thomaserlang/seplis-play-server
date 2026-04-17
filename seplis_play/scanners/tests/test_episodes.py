@@ -76,13 +76,8 @@ async def test_series_id_lookup(play_db_test: Database) -> None:
         )
     )
 
-    # test that a series we haven't searched for is not in the db
     assert not await scanner.series_id.db_lookup('test series')
-
-    # search for the series
     assert 1 == await scanner.series_id.lookup('test series')
-
-    # the result should now be stored in the database
     assert 1 == await scanner.series_id.db_lookup('test series')
 
 
@@ -134,15 +129,11 @@ async def test_save_item(play_db_test: Database) -> None:
             '/ncis/ncis.4.mp4',
         )
     )
-    # episodes saved
     with mock.patch('os.path.exists') as mock_get_files:
         mock_get_files.return_value = True
         for episode in episodes:
             await scanner.save_item(episode[0], episode[1])
 
-    # check that metadata was called for all the episodes.
-    # if metadata i getting called the episode will be
-    # inserted/updated in the db.
     scanner.get_metadata.assert_has_calls(
         [
             mock.call('/ncis/ncis.s01e02.mp4'),
@@ -151,16 +142,11 @@ async def test_save_item(play_db_test: Database) -> None:
         ]
     )
 
-    # check that calling `save_items` again does not result
-    # in a update since the `modified_time` has not changed for
-    # any of them.
     scanner.get_metadata.reset_mock()
     for episode in episodes:
         await scanner.save_item(episode[0], episode[1])
     scanner.get_metadata.assert_has_calls([])
 
-    # check that changing the `modified_time` will result in the
-    # episode getting updated in the db.
     scanner.get_metadata.reset_mock()
     scanner.get_file_modified_time.return_value = datetime(2014, 11, 15, 21, 25, 58)
     with mock.patch('os.path.exists') as mock_get_files:
@@ -189,7 +175,6 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
 
     scanner = EpisodeScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
 
-    # test parsed episode season
     respx.get('/2/series/1/episodes', params={'season': '1', 'episode': '2'}).mock(
         return_value=httpx.Response(
             200,
@@ -208,7 +193,6 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     assert 2 == await scanner.episode_number.lookup(episode)
     assert 2 == await scanner.episode_number.db_lookup(episode)
 
-    # test parsed episode air_date
     respx.get('/2/series/1/episodes', params={'air_date': '2014-11-14'}).mock(
         return_value=httpx.Response(
             200,
@@ -226,7 +210,6 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     assert 3 == await scanner.episode_number.lookup(episode)
     assert 3 == await scanner.episode_number.db_lookup(episode)
 
-    # test parsed episode number
     episode = schemas.ParsedFileEpisode(
         series_id=1,
         title='NCIS',
@@ -242,7 +225,6 @@ async def test_parse_episodes(play_db_test: Database) -> None:
 
     scanner = EpisodeScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
 
-    # Normal
     path = (
         '/Alpha House/Alpha.House.S02E01.The.Love.Doctor.720p.'
         'AI.WEBRip.DD5.1.x264-NTb.mkv'
@@ -253,7 +235,6 @@ async def test_parse_episodes(play_db_test: Database) -> None:
     assert info.season == 2
     assert info.episode == 1
 
-    # Anime
     path = '/Naruto/[HorribleSubs] Naruto Shippuuden - 379 [1080p].mkv'
     info = scanner.parse(path)
     assert info
@@ -266,7 +247,6 @@ async def test_parse_episodes(play_db_test: Database) -> None:
     assert info.title, 'naruto shippuuden'
     assert info.episode_number == 426
 
-    # Air date
     path = (
         '/The Daily series/The.Daily.series.2014.06.03.Ricky.Gervais.HDTV.x264-D0NK.mp4'
     )
@@ -276,7 +256,6 @@ async def test_parse_episodes(play_db_test: Database) -> None:
     assert info.date
     assert info.date.strftime('%Y-%m-%d') == '2014-06-03'
 
-    # Double episode
     path = 'Star Wars Resistance.S01E01-E02.720p webdl h264 aac.mkv'
     info = scanner.parse(path)
     assert info
