@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from aiofile import AIOFile, LineReader
 
 from seplis_play import logger
+from seplis_play.transcoding.tests.test_transcode_schema import TranscodeSettings
 
 from . import base_transcoder
 
@@ -18,7 +19,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
     CODECES = ('h264', 'hevc', 'av1')
 
     def __init__(
-        self, settings: base_transcoder.TranscodeSettings, metadata: dict[str, Any]
+        self, settings: TranscodeSettings, metadata: dict[str, Any]
     ) -> None:
         if settings.transcode_video_codec not in self.CODECES:
             settings.transcode_video_codec = 'h264'

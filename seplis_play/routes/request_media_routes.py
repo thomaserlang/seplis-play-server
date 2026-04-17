@@ -4,8 +4,10 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
+
 from ..dependencies import get_metadata
-from ..transcoding.base_transcoder import Transcoder, TranscodeSettings
+from ..transcoding.base_transcoder import Transcoder
 
 router = APIRouter()
 

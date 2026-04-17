@@ -2,117 +2,20 @@ import asyncio
 import os
 import shutil
 import sys
-import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass as pydataclass
-from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from fastapi import Query
 from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
-    field_validator,
 )
-from pydantic.dataclasses import dataclass
 
 from seplis_play import config
 from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
 from seplis_play.ffmpeg.ffmpeg_schemas import MediaInfo
-
-
-@dataclass
-class TranscodeSettings:
-    play_id: Annotated[str, Query(min_length=1)]
-    session: Annotated[
-        str, Query(default_factory=lambda: str(uuid.uuid4()), min_length=32)
-    ]
-    supported_hdr_formats: Annotated[
-        list[Literal['hdr10', 'hlg', 'dovi', '']], Query(default_factory=lambda: [])
-    ]
-    supported_audio_codecs: Annotated[
-        list[Annotated[str, Query(min_length=1)]], Query(default_factory=lambda: ['aac'])
-    ]
-    supported_video_containers: Annotated[
-        list[Annotated[str, Query(min_length=1)]], Query(default_factory=lambda: ['mp4'])
-    ]
-    source_index: int = 0
-    supported_video_codecs: Annotated[list[str], Query(min_length=1)] = Field(
-        default_factory=lambda: ['h264']
-    )
-    format: Literal['pipe', 'hls', 'hls.js'] = 'hls'
-    transcode_video_codec: Literal['h264', 'hevc', 'vp9', 'av1'] = 'h264'
-    transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3'] = 'aac'
-
-    supported_video_color_bit_depth: Annotated[int, Query(ge=8)] = 10
-    start_time: Annotated[Decimal, Query()] = Decimal(0)
-    start_segment: int | None = None
-    audio_lang: str | None = None
-    max_audio_channels: int | None = None
-    max_width: int | None = None
-    max_video_bitrate: int | None = None
-    client_can_switch_audio_track: bool = False
-    # Currently there is an issue with Firefox and hls not
-    # being able to play if start time isn't 0 with video copy
-    force_transcode: bool = False
-
-    @field_validator('supported_video_color_bit_depth', mode='before')
-    @classmethod
-    def empty_str_to_default_bit_depth(cls, v: str | int) -> int:
-        if v == '':
-            return 10
-        return int(v)
-
-    @field_validator('start_time', mode='before')
-    @classmethod
-    def empty_str_to_default_start_time(cls, v: str | Decimal) -> Decimal:
-        if v == '':
-            return Decimal(0)
-        if isinstance(v, str):
-            return Decimal(v)
-        return v
-
-    @field_validator(
-        'max_audio_channels',
-        'max_width',
-        'max_video_bitrate',
-        'start_segment',
-        mode='before',
-    )
-    @classmethod
-    def empty_str_to_none(cls, v: str | int | None) -> int | None:
-        if v == '':
-            return None
-        if isinstance(v, str):
-            return int(v)
-        return v
-
-    @field_validator(
-        'supported_video_codecs',
-        'supported_audio_codecs',
-        'supported_hdr_formats',
-        'supported_video_containers',
-        mode='before',
-    )
-    @classmethod
-    def comma_string(cls, v: list[str]) -> list[str]:
-        ll = []
-        for a in v:
-            ll.extend([s.strip() for s in a.split(',')])
-        return ll
-
-    def to_args_dict(self) -> dict:
-        from pydantic import RootModel
-
-        settings_dict = RootModel[TranscodeSettings](self).model_dump(
-            exclude_none=True, exclude_unset=True
-        )
-        for key in settings_dict:
-            if isinstance(settings_dict[key], list):
-                settings_dict[key] = ','.join(settings_dict[key])
-        return settings_dict
+from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 
 class VideoColor(BaseModel):

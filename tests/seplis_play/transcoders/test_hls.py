@@ -1,8 +1,8 @@
 from uuid import uuid4
 
 from seplis_play.testbase import run_file
-from seplis_play.transcoding.base_transcoder import TranscodeSettings
 from seplis_play.transcoding.hls_transcoder import HlsTranscoder
+from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 
 def test_hls() -> None:
