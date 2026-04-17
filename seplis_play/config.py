@@ -120,6 +120,3 @@ class ConfigModel(BaseSettings):
 
 
 config = ConfigModel()
-
-if config.transcode_folder:
-    os.makedirs(config.transcode_folder, exist_ok=True)

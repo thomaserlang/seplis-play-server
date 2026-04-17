@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Awaitable
+import os
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,9 @@ def cli(log_path: str | None, log_level: str | None) -> None:
 
 @cli.command()
 def run() -> None:
+    if config.transcode_folder:
+        os.makedirs(config.transcode_folder, exist_ok=True)
+
     uvicorn.run(
         'seplis_play.main:app',
         host='0.0.0.0',
