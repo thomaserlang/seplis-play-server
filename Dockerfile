@@ -54,6 +54,7 @@ RUN \
 
 
 ENV PYTHONPATH="." \
+    PATH="/app/.venv/bin:$PATH" \
     UID=10000 \
     GID=10001 \
     SEPLIS_PLAY__FFMPEG_FOLDER="/usr/lib/jellyfin-ffmpeg"
