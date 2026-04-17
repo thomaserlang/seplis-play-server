@@ -145,7 +145,9 @@ class HlsTranscoder(base_transcoder.Transcoder):
     def generate_main_playlist(self) -> str:
         settings_dict = self.settings.to_args_dict()
         url_settings = urlencode(settings_dict)
-        subtitle_streams = self.get_subtitle_streams()
+        subtitle_streams = (
+            self.get_subtitle_streams() if self.settings.include_subtitles else []
+        )
         playlist = ['#EXTM3U']
 
         for i, stream in subtitle_streams:

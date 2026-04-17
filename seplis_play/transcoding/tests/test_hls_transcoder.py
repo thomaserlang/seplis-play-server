@@ -91,5 +91,123 @@ def test_hls() -> None:
     HlsTranscoder(settings, metadata)
 
 
+def test_hls_main_playlist_does_not_include_subtitles_by_default() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+    )
+    metadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+            {
+                'index': 2,
+                'codec_name': 'subrip',
+                'codec_type': 'subtitle',
+                'tags': {'language': 'eng', 'title': 'English'},
+                'disposition': {'default': 1},
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'format_long_name': 'MP4',
+            'filename': '/tmp/movie.mp4',
+            'start_time': '0.000000',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+            'probe_score': 100,
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    playlist = HlsTranscoder(settings, metadata).generate_main_playlist()
+
+    assert 'TYPE=SUBTITLES' not in playlist
+    assert 'SUBTITLES="subs"' not in playlist
+
+
+def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+        include_subtitles=True,
+    )
+    metadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+            {
+                'index': 2,
+                'codec_name': 'subrip',
+                'codec_type': 'subtitle',
+                'tags': {'language': 'eng', 'title': 'English'},
+                'disposition': {'default': 1},
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'format_long_name': 'MP4',
+            'filename': '/tmp/movie.mp4',
+            'start_time': '0.000000',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+            'probe_score': 100,
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    playlist = HlsTranscoder(settings, metadata).generate_main_playlist()
+
+    assert 'TYPE=SUBTITLES' in playlist
+    assert 'SUBTITLES="subs"' in playlist
+    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=eng:2' in playlist
+
+
 if __name__ == '__main__':
     run_file(__file__)

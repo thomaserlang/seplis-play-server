@@ -55,6 +55,7 @@ class TranscodeSettings:
     start_time: Annotated[Decimal, Query()] = Decimal(0)
     start_segment: int | None = None
     audio_lang: str | None = None
+    include_subtitles: bool = False
     max_audio_channels: int | None = None
     max_width: int | None = None
     max_video_bitrate: int | None = None
