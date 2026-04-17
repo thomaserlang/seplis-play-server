@@ -56,9 +56,6 @@ def configure_logger() -> Logger:
             backtrace=config.debug,
             diagnose=config.debug,
         )
-    app_logger.bind(config_path=str(config.model_config.get('yaml_file') or 'env')).info(
-        'Logger configured'
-    )
     return app_logger
 
 
