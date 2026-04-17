@@ -1,10 +1,7 @@
 import os
-import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
-
-from loguru import logger
 from pydantic import AnyHttpUrl, BaseModel
 from pydantic_settings import (
     BaseSettings,
@@ -52,13 +49,6 @@ def get_config_path() -> Path | None:
     path = path.expanduser()
     if not path.exists():
         raise Exception(f'Config file does not exist: {path}')
-    logger.remove()
-    logger.add(
-        sys.stdout,
-        colorize=True,
-        format='<blue>{message}</blue>',
-    )
-    logger.info(f'Config: {path}')
     return path
 
 

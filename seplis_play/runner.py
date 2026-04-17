@@ -7,6 +7,7 @@ import click
 import uvicorn
 
 from seplis_play import config
+from seplis_play.setup_logger import configure_logger
 
 
 @click.group()
@@ -17,13 +18,18 @@ from seplis_play import config
     '--log_level',
     '-ll',
     default=None,
+    type=click.Choice(
+        ['notset', 'debug', 'info', 'warning', 'error', 'critical'],
+        case_sensitive=False,
+    ),
     help='notset, debug, info, warning, error or critical',
 )
 def cli(log_path: str | None, log_level: str | None) -> None:
     if log_path is not None:
         config.logging.path = Path(log_path)
     if log_level is not None:
-        config.logging.level = log_level  # type: ignore
+        config.logging.level = log_level.lower()
+    configure_logger()
 
 
 @cli.command()
