@@ -34,14 +34,10 @@ class Source:
     subtitles: list[SourceStream] = field(default_factory=list)
     size: int | None = None
     format: str | None = None
-    audio_codec: str = ''
     fps: Decimal = Decimal(0)
     pixel_format: str = ''
     color_transfer: str = ''
     color_primaries: str = ''
-    is_hdr: bool = False
-    is_10bit: bool = False
-    has_bframes: bool = True
 
     @classmethod
     def from_source_metadata(cls, metadata: SourceMetadata, index: int) -> Source:
@@ -78,22 +74,6 @@ class Source:
             bitrate=source_int(metadata['format']['bit_rate']),
             format=metadata['format']['format_name'],
             fps=source_fps(video.get('r_frame_rate')),
-            pixel_format=video['pix_fmt'],
-            color_transfer=video.get('color_transfer', ''),
-            color_primaries=video.get('color_primaries', ''),
-            has_bframes=video.get('has_b_frames', 0) > 0,
-        )
-        source.is_10bit = any(
-            value in source.pixel_format.lower()
-            for value in ['10le', '10be', 'p010', 'yuv420p10']
-        )
-        source.is_hdr = (
-            source.color_transfer.lower()
-            in ['smpte2084', 'arib-std-b67', 'bt2020-10', 'bt2020-12']
-            or source.color_primaries.lower() == 'bt2020'
-            or (
-                source.is_10bit and source.codec.lower() in ['hevc', 'h265', 'av1', 'vp9']
-            )
         )
 
         for stream in metadata['streams']:
