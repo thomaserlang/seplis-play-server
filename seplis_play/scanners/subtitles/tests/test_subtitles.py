@@ -5,8 +5,8 @@ import pytest
 import respx
 import sqlalchemy as sa
 
-from seplis_play import models
 from seplis_play.database import Database
+from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
 from seplis_play.testbase import run_file
 
 
@@ -42,7 +42,7 @@ async def test_subtitles(play_db_test: Database) -> None:
 
         async with play_db_test.session() as session:
             r = await session.scalars(
-                sa.select(models.ExternalSubtitle).order_by(models.ExternalSubtitle.id)
+                sa.select(MExternalSubtitle).order_by(MExternalSubtitle.id)
             )
             r = list(r)
 

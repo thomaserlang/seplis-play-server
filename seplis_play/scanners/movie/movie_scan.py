@@ -7,11 +7,13 @@ import sqlalchemy as sa
 from guessit import guessit
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from seplis_play import config, logger, models, schemas
+from seplis_play import config, logger
 from seplis_play.client import client
 from seplis_play.database import database
+from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
+from seplis_play.scanners.movie.movie_schemas import PlayServerMovieCreate
 
-from .scan_base import PlayScan
+from ..scan_base import PlayScan
 
 
 class MovieScan(PlayScan):
@@ -42,8 +44,8 @@ class MovieScan(PlayScan):
             return False
         async with database.session() as session:
             movie = await session.scalar(
-                sa.select(models.Movie).where(
-                    models.Movie.path == path,
+                sa.select(MMovie).where(
+                    MMovie.path == path,
                 )
             )
             movie_id: int | None = movie.movie_id if movie else None
@@ -62,25 +64,25 @@ class MovieScan(PlayScan):
 
                     if movie:
                         sql = (
-                            sa.update(models.Movie)
+                            sa.update(MMovie)
                             .where(
-                                models.Movie.path == path,
+                                MMovie.path == path,
                             )
                             .values(
                                 {
-                                    models.Movie.movie_id: movie_id,
-                                    models.Movie.meta_data: metadata,
-                                    models.Movie.modified_time: modified_time,
+                                    MMovie.movie_id: movie_id,
+                                    MMovie.meta_data: metadata,
+                                    MMovie.modified_time: modified_time,
                                 }
                             )
                         )
                     else:
-                        sql = sa.insert(models.Movie).values(
+                        sql = sa.insert(MMovie).values(
                             {
-                                models.Movie.movie_id: movie_id,
-                                models.Movie.path: path,
-                                models.Movie.meta_data: metadata,
-                                models.Movie.modified_time: modified_time,
+                                MMovie.movie_id: movie_id,
+                                MMovie.path: path,
+                                MMovie.meta_data: metadata,
+                                MMovie.modified_time: modified_time,
                             }
                         )
                     await session.execute(sql)
@@ -109,7 +111,7 @@ class MovieScan(PlayScan):
         r = await client.patch(
             f'/2/play-servers/{config.server_id}/movies',
             json=[
-                schemas.PlayServerMovieCreate(
+                PlayServerMovieCreate(
                     movie_id=movie_id,
                     created_at=created_at or datetime.now(tz=UTC),
                 ).model_dump(mode='json')
@@ -132,9 +134,9 @@ class MovieScan(PlayScan):
     async def lookup(self, title: str) -> int | None:
         logger.debug(f'Looking for a movie with title: "{title}"')
         async with database.session() as session:
-            movie: models.MovieIdLookup | None = await session.scalar(
-                sa.select(models.MovieIdLookup).where(
-                    models.MovieIdLookup.file_title == title,
+            movie = await session.scalar(
+                sa.select(MMovieIdLookup).where(
+                    MMovieIdLookup.file_title == title,
                 )
             )
             if not movie:
@@ -150,7 +152,7 @@ class MovieScan(PlayScan):
                 if not movies:
                     return None
                 logger.debug(f'[movie-{movies[0]["id"]}] Found: {movies[0]["title"]}')
-                movie = models.MovieIdLookup(
+                movie = MMovieIdLookup(
                     file_title=title,
                     movie_title=movies[0]['title'],
                     movie_id=movies[0]['id'],
@@ -167,14 +169,14 @@ class MovieScan(PlayScan):
     async def delete_path(self, path: str) -> bool:
         async with database.session() as session:
             movie_id: int | None = await session.scalar(
-                sa.select(models.Movie.movie_id).where(
-                    models.Movie.path == path,
+                sa.select(MMovie.movie_id).where(
+                    MMovie.path == path,
                 )
             )
             if movie_id:
                 await session.execute(
-                    sa.delete(models.Movie).where(
-                        models.Movie.path == path,
+                    sa.delete(MMovie).where(
+                        MMovie.path == path,
                     )
                 )
                 await session.commit()
@@ -190,9 +192,9 @@ class MovieScan(PlayScan):
         if self.cleanup_mode:
             return
         if config.server_id:
-            m: models.Movie | None = await session.scalar(
-                sa.select(models.Movie).where(
-                    models.Movie.movie_id == movie_id,
+            m: MMovie | None = await session.scalar(
+                sa.select(MMovie).where(
+                    MMovie.movie_id == movie_id,
                 )
             )
             if m:
@@ -214,8 +216,6 @@ class MovieScan(PlayScan):
     async def get_paths_matching_base_path(self, base_path: str) -> list[str]:
         async with database.session() as session:
             results = await session.scalars(
-                sa.select(models.Movie.path).where(
-                    models.Movie.path.like(f'{base_path}%')
-                )
+                sa.select(MMovie.path).where(MMovie.path.like(f'{base_path}%'))
             )
             return list(results)

@@ -6,8 +6,8 @@ import pytest
 import respx
 import sqlalchemy as sa
 
-from seplis_play import models
 from seplis_play.database import Database
+from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
 from seplis_play.testbase import run_file
 
 
@@ -50,18 +50,18 @@ async def test_movies(play_db_test: Database) -> None:
     assert search.called
 
     async with play_db_test.session() as session:
-        r = await session.scalar(sa.select(models.MovieIdLookup))
+        r = await session.scalar(sa.select(MMovieIdLookup))
         assert r
         assert r.file_title == 'Uncharted'
 
-        r = await session.scalar(sa.select(models.Movie))
+        r = await session.scalar(sa.select(MMovie))
         assert r
         assert r.path == 'Uncharted.mkv'
         assert r.meta_data == {'some': 'data'}
 
     await scanner.delete_path('Uncharted.mkv')
     async with play_db_test.session() as session:
-        r = await session.scalar(sa.select(models.Movie))
+        r = await session.scalar(sa.select(MMovie))
     assert not r
 
 

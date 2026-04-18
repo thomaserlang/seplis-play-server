@@ -8,12 +8,16 @@ import sqlalchemy as sa
 from guessit import guessit
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from seplis_play import config, constants, logger, models, schemas
+from seplis_play import config, logger
 from seplis_play.client import client
 from seplis_play.database import database
-from seplis_play.scanners.subtitle_scan import SubtitleScan
+from seplis_play.schemas.page_cursor_schema import PageCursorResult
 
-from .scan_base import PlayScan
+from ..scan_base import PlayScan
+from ..subtitles.subtitle_scan import SubtitleScan
+from .episode_constants import EPISODE_FILENAME_PATTERNS
+from .episode_models import MEpisode, MEpisodeNumberLookup, MSeriesIdLookup
+from .episode_schemas import Episode, ParsedFileEpisode, PlayServerEpisodeCreate
 
 
 class EpisodeScan(PlayScan):
@@ -32,7 +36,7 @@ class EpisodeScan(PlayScan):
         self.not_found_series: list[str] = []
         self.subtitles_scan = SubtitleScan(scan_path=scan_path)
 
-    def parse(self, filename: str) -> schemas.ParsedFileEpisode | None:
+    def parse(self, filename: str) -> ParsedFileEpisode | None:
         result = None
         if self.parser == 'guessit':
             result = self.guessit_parse_file_name(filename)
@@ -43,7 +47,7 @@ class EpisodeScan(PlayScan):
         return result
 
     async def episode_series_id_lookup(
-        self, episode: schemas.ParsedFileEpisode, path: str | None = None
+        self, episode: ParsedFileEpisode, path: str | None = None
     ) -> bool:
         if episode.title in self.not_found_series:
             return False
@@ -58,7 +62,7 @@ class EpisodeScan(PlayScan):
         return False
 
     async def episode_number_lookup(
-        self, episode: schemas.ParsedFileEpisode, path: str | None = None
+        self, episode: ParsedFileEpisode, path: str | None = None
     ) -> bool | None:
         """
         Tries to lookup the episode number of the episode.
@@ -80,14 +84,14 @@ class EpisodeScan(PlayScan):
         logger.info(f'[series-{episode.series_id}] No episode found for {value} ({path})')
         return False
 
-    async def save_item(self, item: schemas.ParsedFileEpisode, path: str) -> bool:
+    async def save_item(self, item: ParsedFileEpisode, path: str) -> bool:
         if not os.path.exists(path):
             logger.debug(f"Path doesn't exist any longer: {path}")
             return False
         async with database.session() as session:
             ep = await session.scalar(
-                sa.select(models.Episode).where(
-                    models.Episode.path == path,
+                sa.select(MEpisode).where(
+                    MEpisode.path == path,
                 )
             )
             if ep:
@@ -107,25 +111,25 @@ class EpisodeScan(PlayScan):
 
                     if ep:
                         sql = (
-                            sa.update(models.Episode)
+                            sa.update(MEpisode)
                             .where(
-                                models.Episode.path == path,
+                                MEpisode.path == path,
                             )
                             .values(
                                 {
-                                    models.Episode.meta_data: metadata,
-                                    models.Episode.modified_time: modified_time,
+                                    MEpisode.meta_data: metadata,
+                                    MEpisode.modified_time: modified_time,
                                 }
                             )
                         )
                     else:
-                        sql = sa.insert(models.Episode).values(
+                        sql = sa.insert(MEpisode).values(
                             {
-                                models.Episode.series_id: item.series_id,
-                                models.Episode.number: item.episode_number,
-                                models.Episode.path: path,
-                                models.Episode.meta_data: metadata,
-                                models.Episode.modified_time: modified_time,
+                                MEpisode.series_id: item.series_id,
+                                MEpisode.number: item.episode_number,
+                                MEpisode.path: path,
+                                MEpisode.meta_data: metadata,
+                                MEpisode.modified_time: modified_time,
                             }
                         )
                     await session.execute(sql)
@@ -174,7 +178,7 @@ class EpisodeScan(PlayScan):
         r = await client.patch(
             f'/2/play-servers/{config.server_id}/episodes',
             json=[
-                schemas.PlayServerEpisodeCreate(
+                PlayServerEpisodeCreate(
                     series_id=series_id,
                     episode_number=episode_number,
                     created_at=created_at or datetime.now(tz=UTC),
@@ -199,14 +203,14 @@ class EpisodeScan(PlayScan):
     async def delete_path(self, path: str) -> bool:
         async with database.session() as session:
             episode = await session.scalar(
-                sa.select(models.Episode).where(
-                    models.Episode.path == path,
+                sa.select(MEpisode).where(
+                    MEpisode.path == path,
                 )
             )
             if episode:
                 await session.execute(
-                    sa.delete(models.Episode).where(
-                        models.Episode.path == path,
+                    sa.delete(MEpisode).where(
+                        MEpisode.path == path,
                     )
                 )
                 await session.commit()
@@ -230,9 +234,9 @@ class EpisodeScan(PlayScan):
             return
 
         m = await session.scalar(
-            sa.select(models.Episode).where(
-                models.Episode.series_id == series_id,
-                models.Episode.number == episode_number,
+            sa.select(MEpisode).where(
+                MEpisode.series_id == series_id,
+                MEpisode.number == episode_number,
             )
         )
         if m:
@@ -258,9 +262,9 @@ class EpisodeScan(PlayScan):
                 f'[episode-{series_id}-{episode_number}] Removed from play server index'
             )
 
-    def regex_parse_file_name(self, filename: str) -> schemas.ParsedFileEpisode | None:
-        result = schemas.ParsedFileEpisode()
-        for pattern in constants.SERIES_FILENAME_PATTERNS:
+    def regex_parse_file_name(self, filename: str) -> ParsedFileEpisode | None:
+        result = ParsedFileEpisode()
+        for pattern in EPISODE_FILENAME_PATTERNS:
             try:
                 match = re.match(
                     pattern, os.path.basename(filename), re.VERBOSE | re.IGNORECASE
@@ -312,7 +316,7 @@ class EpisodeScan(PlayScan):
             else None
         )
 
-    def guessit_parse_file_name(self, filename: str) -> schemas.ParsedFileEpisode | None:
+    def guessit_parse_file_name(self, filename: str) -> ParsedFileEpisode | None:
         d = guessit(
             filename,
             {
@@ -322,7 +326,7 @@ class EpisodeScan(PlayScan):
                 'no_user_config': 'true',
             },
         )
-        result = schemas.ParsedFileEpisode()
+        result = ParsedFileEpisode()
         if d and d.get('title'):
             result.title = str(d['title']).strip().lower()
             if d.get('year'):
@@ -342,8 +346,8 @@ class EpisodeScan(PlayScan):
     async def get_paths_matching_base_path(self, base_path: str) -> list[str]:
         async with database.session() as session:
             results = await session.scalars(
-                sa.select(models.Episode.path).where(
-                    models.Episode.path.like(f'{base_path}%'),
+                sa.select(MEpisode.path).where(
+                    MEpisode.path.like(f'{base_path}%'),
                 )
             )
             return [r for r in results]
@@ -371,11 +375,11 @@ class SeriesIdLookup:
         series_id = series[0]['id'] if series else None
         series_title = series[0]['title'] if series else None
         async with database.session() as session:
-            series_lookup = models.SeriesIdLookup(
+            series_lookup = MSeriesIdLookup(
                 file_title=file_title,
                 series_title=series_title,
                 series_id=series_id,
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(tz=UTC),
             )
             await session.merge(series_lookup)
             await session.commit()
@@ -384,8 +388,8 @@ class SeriesIdLookup:
     async def db_lookup(self, file_title: str) -> int | None:
         async with database.session() as session:
             series = await session.scalar(
-                sa.select(models.SeriesIdLookup).where(
-                    models.SeriesIdLookup.file_title == file_title,
+                sa.select(MSeriesIdLookup).where(
+                    MSeriesIdLookup.file_title == file_title,
                 )
             )
             if not series or not series.series_id:
@@ -413,7 +417,7 @@ class EpisodeNumberLookup:
     def __init__(self, scanner: EpisodeScan) -> None:
         self.scanner = scanner
 
-    async def lookup(self, episode: schemas.ParsedFileEpisode) -> int | None:
+    async def lookup(self, episode: ParsedFileEpisode) -> int | None:
         if not episode.series_id:
             raise Exception('series_id must be defined in the episode object')
         if episode.episode_number:
@@ -426,7 +430,7 @@ class EpisodeNumberLookup:
             return None
         async with database.session() as session:
             await session.execute(
-                sa.insert(models.EpisodeNumberLookup).values(
+                sa.insert(MEpisodeNumberLookup).values(
                     series_id=episode.series_id,
                     lookup_type=1,
                     lookup_value=self.get_lookup_value(episode),
@@ -436,14 +440,14 @@ class EpisodeNumberLookup:
             await session.commit()
         return number
 
-    async def db_lookup(self, episode: schemas.ParsedFileEpisode) -> int | None:
+    async def db_lookup(self, episode: ParsedFileEpisode) -> int | None:
         async with database.session() as session:
             value = self.get_lookup_value(episode)
             e = await session.scalar(
-                sa.select(models.EpisodeNumberLookup.number).where(
-                    models.EpisodeNumberLookup.series_id == episode.series_id,
-                    models.EpisodeNumberLookup.lookup_type == 1,
-                    models.EpisodeNumberLookup.lookup_value == value,
+                sa.select(MEpisodeNumberLookup.number).where(
+                    MEpisodeNumberLookup.series_id == episode.series_id,
+                    MEpisodeNumberLookup.lookup_type == 1,
+                    MEpisodeNumberLookup.lookup_value == value,
                 )
             )
             if not e:
@@ -451,7 +455,7 @@ class EpisodeNumberLookup:
             return e
 
     @staticmethod
-    def get_lookup_value(episode: schemas.ParsedFileEpisode) -> str | None:
+    def get_lookup_value(episode: ParsedFileEpisode) -> str | None:
         value: str | None = None
         if episode.season and episode.episode:
             value = f'{episode.season}-{episode.episode}'
@@ -459,7 +463,7 @@ class EpisodeNumberLookup:
             value = episode.date.strftime('%Y-%m-%d')
         return value
 
-    async def web_lookup(self, episode: schemas.ParsedFileEpisode) -> int | None:
+    async def web_lookup(self, episode: ParsedFileEpisode) -> int | None:
         params: dict[str, Any] = {}
         if episode.season and episode.episode:
             params = {
@@ -474,7 +478,7 @@ class EpisodeNumberLookup:
             raise Exception('Unknown parsed episode object')
         r = await client.get(f'/2/series/{episode.series_id}/episodes', params=params)
         r.raise_for_status()
-        episodes = schemas.PageCursorResult[schemas.Episode].model_validate(r.json())
+        episodes = PageCursorResult[Episode].model_validate(r.json())
         if not episodes.items:
             return None
         return episodes.items[0].number

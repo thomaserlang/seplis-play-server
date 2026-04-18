@@ -6,8 +6,11 @@ import pytest
 import respx
 import sqlalchemy as sa
 
-from seplis_play import models, schemas
 from seplis_play.database import Database
+from seplis_play.scan import EpisodeScan
+from seplis_play.scanners.episode.episode_models import MEpisode
+from seplis_play.scanners.episode.episode_schemas import Episode, ParsedFileEpisode
+from seplis_play.schemas.page_cursor_schema import PageCursorResult
 from seplis_play.testbase import run_file
 
 
@@ -83,9 +86,6 @@ async def test_series_id_lookup(play_db_test: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_save_item(play_db_test: Database) -> None:
-    from seplis_play.scanners import EpisodeScan
-    from seplis_play.schemas import ParsedFileEpisode
-
     scanner = EpisodeScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
     scanner.get_file_modified_time = mock.MagicMock(
         return_value=datetime(2014, 11, 14, 21, 25, 58)
@@ -156,14 +156,14 @@ async def test_save_item(play_db_test: Database) -> None:
     )
 
     async with play_db_test.session() as session:
-        r = await session.scalars(sa.select(models.Episode))
+        r = await session.scalars(sa.select(MEpisode))
         r = r.all()
         assert len(r) == 3
 
     await scanner.delete_path(episodes[0][1])
 
     async with play_db_test.session() as session:
-        r = await session.scalars(sa.select(models.Episode))
+        r = await session.scalars(sa.select(MEpisode))
         r = r.all()
         assert len(r) == 2
 
@@ -178,12 +178,10 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     respx.get('/2/series/1/episodes', params={'season': '1', 'episode': '2'}).mock(
         return_value=httpx.Response(
             200,
-            json=schemas.PageCursorResult[schemas.Episode](
-                items=[schemas.Episode(number=2)]
-            ).model_dump(),
+            json=PageCursorResult[Episode](items=[Episode(number=2)]).model_dump(),
         )
     )
-    episode = schemas.ParsedFileEpisode(
+    episode = ParsedFileEpisode(
         series_id=1,
         title='NCIS',
         season=1,
@@ -196,12 +194,10 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     respx.get('/2/series/1/episodes', params={'air_date': '2014-11-14'}).mock(
         return_value=httpx.Response(
             200,
-            json=schemas.PageCursorResult[schemas.Episode](
-                items=[schemas.Episode(number=3)]
-            ).model_dump(),
+            json=PageCursorResult[Episode](items=[Episode(number=3)]).model_dump(),
         )
     )
-    episode = schemas.ParsedFileEpisode(
+    episode = ParsedFileEpisode(
         series_id=1,
         title='NCIS',
         date=date(2014, 11, 14),
@@ -210,7 +206,7 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     assert 3 == await scanner.episode_number.lookup(episode)
     assert 3 == await scanner.episode_number.db_lookup(episode)
 
-    episode = schemas.ParsedFileEpisode(
+    episode = ParsedFileEpisode(
         series_id=1,
         title='NCIS',
         episode_number=4,

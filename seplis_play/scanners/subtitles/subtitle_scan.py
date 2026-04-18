@@ -4,10 +4,11 @@ from typing import NotRequired, TypedDict
 import sqlalchemy as sa
 from iso639 import Lang
 
-from seplis_play import config, logger, models
+from seplis_play import config, logger
 from seplis_play.database import database
+from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
 
-from .scan_base import PlayScan
+from ..scan_base import PlayScan
 
 
 class SubtitleInfo(TypedDict):
@@ -28,13 +29,13 @@ class SubtitleScan(PlayScan):
             return False
         async with database.session() as session:
             s = await session.scalar(
-                sa.select(models.ExternalSubtitle).where(
-                    models.ExternalSubtitle.path == path,
+                sa.select(MExternalSubtitle).where(
+                    MExternalSubtitle.path == path,
                 )
             )
             if not s:
                 await session.execute(
-                    sa.insert(models.ExternalSubtitle).values(
+                    sa.insert(MExternalSubtitle).values(
                         {
                             'path': path,
                             **item,
@@ -78,14 +79,14 @@ class SubtitleScan(PlayScan):
     async def delete_path(self, path: str) -> bool:
         async with database.session() as session:
             s = await session.scalar(
-                sa.select(models.ExternalSubtitle).where(
-                    models.ExternalSubtitle.path == path,
+                sa.select(MExternalSubtitle).where(
+                    MExternalSubtitle.path == path,
                 )
             )
             if s:
                 await session.execute(
-                    sa.delete(models.ExternalSubtitle).where(
-                        models.ExternalSubtitle.path == path,
+                    sa.delete(MExternalSubtitle).where(
+                        MExternalSubtitle.path == path,
                     )
                 )
                 await session.commit()
@@ -97,8 +98,8 @@ class SubtitleScan(PlayScan):
     async def get_paths_matching_base_path(self, base_path: str) -> list[str]:
         async with database.session() as session:
             results = await session.scalars(
-                sa.select(models.ExternalSubtitle.path).where(
-                    models.ExternalSubtitle.path.like(f'{base_path}%'),
+                sa.select(MExternalSubtitle.path).where(
+                    MExternalSubtitle.path.like(f'{base_path}%'),
                 )
             )
             return [r for r in results]

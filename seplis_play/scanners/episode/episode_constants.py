@@ -1,5 +1,5 @@
 # from https://github.com/dbr/tvnamer/blob/master/tvnamer/config_defaults.py
-SERIES_FILENAME_PATTERNS = [
+EPISODE_FILENAME_PATTERNS = [
     # foo - s01e01 - 001
     r"""^(?P<file_title>.+?)[ ]?[ \._\-][ ]?
     [Ss](?P<season>[0-9]+)[Ee](?P<episode>[0-9]+)[ ]?[ \._\-][ ]?

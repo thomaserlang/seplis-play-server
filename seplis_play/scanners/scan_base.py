@@ -6,7 +6,8 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
 
-from seplis_play import config, logger, utils
+from seplis_play import config, logger
+from seplis_play.utils.json_utils import json_loads
 
 
 class PlayScan:
@@ -111,7 +112,7 @@ class PlayScan:
             )
         if isinstance(data, bytes):
             data = data.decode('utf-8')
-        result: dict[str, Any] = utils.json_loads(data)
+        result: dict[str, Any] = json_loads(data)
         if config.extract_keyframes and path.endswith('.mkv'):
             result['keyframes'] = await self.get_keyframes(path)
         return result
@@ -161,7 +162,7 @@ class PlayScan:
 
         if isinstance(data, bytes):
             data = data.decode('utf-8')
-        parsed: dict[str, Any] = utils.json_loads(data)
+        parsed: dict[str, Any] = json_loads(data)
         keyframes: list[str] = [
             r['pts_time']
             for r in parsed['packets']

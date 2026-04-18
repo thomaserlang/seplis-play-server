@@ -3,10 +3,11 @@ from typing import Annotated, Any
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 from iso639 import Lang
-from pydantic import BaseModel
 
-from .. import database, logger, models
-from ..browser_media_types import get_browser_media_types
+from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
+from seplis_play.schemas.source_schemas import SourceModel, SourceStreamModel
+
+from .. import database, logger
 from ..dependencies import get_sources as deps_get_sources
 from ..transcoding.base_transcoder import (
     get_video_color,
@@ -14,36 +15,9 @@ from ..transcoding.base_transcoder import (
     get_video_stream,
     stream_index_by_lang,
 )
+from ..utils.browser_media_types_utils import get_browser_media_types
 
 router = APIRouter()
-
-
-class SourceStreamModel(BaseModel):
-    title: str | None
-    language: str | None
-    index: int
-    group_index: int | None = None
-    codec: str | None
-    default: bool = False
-    forced: bool = False
-
-
-class SourceModel(BaseModel):
-    width: int
-    height: int
-    resolution: str
-    codec: str
-    media_type: str | None = None
-    duration: float
-    audio: list[SourceStreamModel] = []
-    subtitles: list[SourceStreamModel] = []
-    index: int
-    video_color_bit_depth: int
-    video_color_range: str
-    video_color_range_type: str
-    size: int | None = None
-    bit_rate: int | None = None
-    format: str | None = None
 
 
 @router.get('/sources', name='Get sources')
@@ -112,8 +86,8 @@ async def fill_external_subtitles(
     async with database.session() as session:
         filename = filename.rsplit('.', 1)[0]
         results = await session.scalars(
-            sa.select(models.ExternalSubtitle).where(
-                models.ExternalSubtitle.path.like(f'{filename}.%'),
+            sa.select(MExternalSubtitle).where(
+                MExternalSubtitle.path.like(f'{filename}.%'),
             )
         )
         for r in results:
