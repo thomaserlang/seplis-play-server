@@ -38,6 +38,7 @@ class SourceVideoStream(SourceBaseStream):
     codec_tag_string: NotRequired[str]
     color_transfer: NotRequired[str]
     color_primaries: NotRequired[str]
+    color_space: NotRequired[str]
     r_frame_rate: NotRequired[str]
     has_b_frames: NotRequired[int]
     side_data_list: NotRequired[list[SourceSideData]]
@@ -56,7 +57,7 @@ class SourceSubtitleStream(SourceBaseStream):
     codec_type: Literal['subtitle']
 
 
-type FFprobeStream = SourceVideoStream | SourceAudioStream | SourceSubtitleStream
+type SourceStream = SourceVideoStream | SourceAudioStream | SourceSubtitleStream
 
 
 class SourceFormat(TypedDict):
@@ -68,6 +69,6 @@ class SourceFormat(TypedDict):
 
 
 class SourceMetadata(TypedDict):
-    streams: list[FFprobeStream]
+    streams: list[SourceStream]
     format: SourceFormat
     keyframes: NotRequired[list[str] | None]

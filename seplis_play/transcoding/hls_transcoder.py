@@ -20,6 +20,7 @@ from . import base_transcoder
 class HlsTranscoder(base_transcoder.Transcoder):
     MEDIA_NAME: str = 'media.m3u8'
     CODECES = ('h264', 'hevc', 'av1')
+    HDR_CODECS = ('hevc', 'av1')
 
     def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         if settings.transcode_video_codec not in self.CODECES:
@@ -27,6 +28,18 @@ class HlsTranscoder(base_transcoder.Transcoder):
         settings.supported_video_codecs = [
             c for c in settings.supported_video_codecs if c in self.CODECES
         ]  # Filter out unsupported codecs for hls
+        source_codec = next(
+            (
+                stream.get('codec_name')
+                for stream in metadata.get('streams', [])
+                if stream.get('codec_type') == 'video'
+            ),
+            None,
+        )
+        if source_codec not in self.HDR_CODECS or not any(
+            codec in self.HDR_CODECS for codec in settings.supported_video_codecs
+        ):
+            settings.supported_hdr_formats = []
         if settings.format == 'hls.js':
             # Find out if hls.js supports other than aac, e.g. eac3 doesn't work
             settings.supported_audio_codecs = [
@@ -174,6 +187,15 @@ class HlsTranscoder(base_transcoder.Transcoder):
         playlist.append(f'/hls/media.m3u8?{url_settings}')
         return '\n'.join(playlist)
 
+    def get_video_range(self) -> str:
+        if not self.can_copy_video or self.video_output_codec not in self.HDR_CODECS:
+            return 'SDR'
+        if self.video_color.range_type == 'hdr10':
+            return 'PQ'
+        if self.video_color.range_type == 'hlg':
+            return 'HLG'
+        return 'SDR'
+
     def get_stream_info_string(self) -> str:
         info = []
         video_bitrate = self.get_video_bitrate()
@@ -187,17 +209,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
         else:
             height = self.source.height
         info.append(f'RESOLUTION={width}x{height}')
-        if self.can_copy_video:
-            color_transfer = self.source.color_transfer.lower()
-            if color_transfer == 'smpte2084':
-                video_range = 'PQ'
-            elif color_transfer == 'arib-std-b67':
-                video_range = 'HLG'
-            else:
-                video_range = 'SDR'
-            info.append(f'VIDEO-RANGE={video_range}')
-        else:
-            info.append('VIDEO-RANGE=SDR')
+        info.append(f'VIDEO-RANGE={self.get_video_range()}')
         return ','.join(info)
 
     def get_segments(self) -> list[Decimal]:

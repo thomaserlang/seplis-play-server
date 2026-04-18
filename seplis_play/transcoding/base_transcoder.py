@@ -523,29 +523,27 @@ class Transcoder:
             if self.video_output_codec_lib == 'h264_qsv':
                 pix_fmt = 'yuv420p'
 
-        format_ = ''
+        scale_filter_options = []
+        if (width != self.video_stream['width']) or (
+            self.video_input_codec == 'av1'
+        ):  # [av1 @ 0x64e783171840] HW accel start frame fail. - Add the width.
+            scale_filter_options.extend([f'w={width}', 'h=-2'])
+
         if not tonemap:
             if pix_fmt == 'yuv420p10le':
-                format_ = 'format=p010le'
+                scale_filter_options.append('format=p010le')
             else:
-                format_ = 'format=nv12'
-
-        width_filter = (
-            f'w={width}:h=-2'
-            if (width != self.video_stream['width'])
-            or (
-                self.video_input_codec == 'av1'
-            )  # [av1 @ 0x64e783171840] HW accel start frame fail. - Add the width.
-            else ''
-        )
-        if width_filter and format_:
-            format_ = ':' + format_
+                scale_filter_options.append('format=nv12')
 
         if config.ffmpeg_hwaccel == 'qsv':
-            format_ += ':extra_hw_frames=24'
-            vf.append(f'scale_vaapi={width_filter}{format_}')
+            scale_filter_options.append('extra_hw_frames=24')
+            scale_filter = 'scale_vaapi'
         else:
-            vf.append(f'scale_{config.ffmpeg_hwaccel}={width_filter}{format_}')
+            scale_filter = f'scale_{config.ffmpeg_hwaccel}'
+
+        if scale_filter_options:
+            scale_filter += f'={":".join(scale_filter_options)}'
+        vf.append(scale_filter)
 
         if not tonemap:
             vf.append(

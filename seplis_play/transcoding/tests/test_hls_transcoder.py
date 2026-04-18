@@ -1,6 +1,9 @@
 from typing import cast
 from uuid import uuid4
 
+import pytest
+
+from seplis_play import config
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
 from seplis_play.transcoding.hls_transcoder import HlsTranscoder
@@ -204,6 +207,222 @@ def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
     assert 'TYPE=SUBTITLES' in playlist
     assert 'SUBTITLES="subs"' in playlist
     assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=eng:2' in playlist
+
+
+def test_qsv_tonemap_filter_without_resize_has_valid_scale_expression(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, 'ffmpeg_hwaccel_enabled', True)
+    monkeypatch.setattr(config, 'ffmpeg_hwaccel', 'qsv')
+    monkeypatch.setattr(config, 'ffmpeg_tonemap_enabled', True)
+
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        supported_video_color_bit_depth=8,
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'hevc',
+                'profile': 'Main 10',
+                'codec_type': 'video',
+                'codec_tag_string': '[0][0][0][0]',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'color_primaries': 'bt2020',
+                'color_space': 'bt2020nc',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'matroska,webm',
+            'filename': '/tmp/movie.mkv',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    vf = transcoder.get_video_filter(width=1920)
+
+    assert vf is not None
+    assert 'scale_vaapi=extra_hw_frames=24' in vf
+    assert 'scale_vaapi=:extra_hw_frames=24' not in vf
+
+
+def test_hls_h264_only_does_not_expose_hdr() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=['hdr10'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert transcoder.settings.supported_hdr_formats == []
+    assert transcoder.can_copy_video is True
+    assert transcoder.get_video_range() == 'SDR'
+    assert 'VIDEO-RANGE=SDR' in transcoder.get_stream_info_string()
+
+
+def test_hls_h264_source_is_treated_as_sdr_even_if_hevc_is_supported() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=['hdr10'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264', 'hevc'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert transcoder.settings.supported_hdr_formats == []
+    assert transcoder.can_copy_video is True
+    assert transcoder.get_video_range() == 'SDR'
+    assert 'VIDEO-RANGE=SDR' in transcoder.get_stream_info_string()
+
+
+def test_hls_hevc_support_keeps_hdr_available() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=['hdr10'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264', 'hevc'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'hevc',
+                'codec_type': 'video',
+                'codec_tag_string': 'hvc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'color_primaries': 'bt2020',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert transcoder.settings.supported_hdr_formats == ['hdr10']
+    assert transcoder.can_copy_video is True
+    assert transcoder.get_video_range() == 'PQ'
+    assert 'VIDEO-RANGE=PQ' in transcoder.get_stream_info_string()
 
 
 if __name__ == '__main__':
