@@ -1,5 +1,5 @@
 import math
-from typing import Annotated, Any
+from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -9,7 +9,8 @@ from seplis_play import logger
 
 from .. import config
 from ..dependencies import get_metadata
-from ..ffmpeg.ffmpeg_schemas import MediaInfo
+from ..schemas.source_metadata_schemas import SourceMetadata
+from ..schemas.source_schemas import Source
 from ..transcoding.base_transcoder import TranscodeSettings, sessions
 from ..transcoding.hls_transcoder import HlsTranscoder
 
@@ -19,7 +20,7 @@ router = APIRouter()
 @router.get('/hls/main.m3u8', name='Get HLS main playlist')
 async def get_main_playlist_route(
     settings: Annotated[TranscodeSettings, Depends()],
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> Response:
     transcoder = HlsTranscoder(settings=settings, metadata=metadata)
     return Response(
@@ -31,7 +32,7 @@ async def get_main_playlist_route(
 @router.get('/hls/media.m3u8', name='Get HLS media playlist')
 async def get_media_route(
     settings: Annotated[TranscodeSettings, Depends()],
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> Response:
     if settings.session in sessions:
         transcoder = HlsTranscoder(settings=settings, metadata=metadata)
@@ -48,9 +49,12 @@ async def get_subtitle_playlist_route(
     play_id: str,
     source_index: int,
     lang: str,
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> Response:
-    duration = float(MediaInfo.from_ffprobe(metadata).duration)
+    duration = Source.from_source_metadata(
+        metadata=metadata,
+        index=source_index,
+    ).duration
     params = urlencode({'play_id': play_id, 'source_index': source_index, 'lang': lang})
     playlist = [
         '#EXTM3U',

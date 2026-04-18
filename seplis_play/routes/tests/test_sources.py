@@ -1,9 +1,11 @@
 import asyncio
+from typing import Any, cast
 
 from pytest import MonkeyPatch
 
 import seplis_play.routes.sources_routes as sources_routes
 from seplis_play.routes.sources_routes import resolution_text
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
 
 
@@ -23,7 +25,7 @@ def test_get_sources_route_exposes_media_type(monkeypatch: MonkeyPatch) -> None:
         sources_routes, 'fill_external_subtitles', noop_fill_external_subtitles
     )
 
-    sources = [
+    sources: list[SourceMetadata] = [
         {
             'streams': [
                 {
@@ -42,6 +44,7 @@ def test_get_sources_route_exposes_media_type(monkeypatch: MonkeyPatch) -> None:
                     'codec_name': 'aac',
                     'codec_type': 'audio',
                     'profile': 'LC',
+                    'channels': 2,
                     'disposition': {'default': 1},
                 },
             ],
@@ -55,7 +58,7 @@ def test_get_sources_route_exposes_media_type(monkeypatch: MonkeyPatch) -> None:
         }
     ]
 
-    response = asyncio.run(sources_routes.get_sources_route(sources=sources))
+    response = asyncio.run(sources_routes.get_sources_route(sources=cast(Any, sources)))
 
     assert response[0].media_type == 'video/mp4; codecs="avc1.640028, mp4a.40.2"'
 

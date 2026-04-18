@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel
+
+from seplis_play.schemas.source_metadata_schemas import FFprobeStream, SourceMetadata
 
 
 class BrowserMediaTypes(BaseModel):
@@ -9,9 +10,9 @@ class BrowserMediaTypes(BaseModel):
 
 
 def get_browser_media_types(
-    metadata: dict[str, Any],
-    video_stream: dict[str, Any] | None,
-    audio_stream: dict[str, Any] | None,
+    metadata: SourceMetadata,
+    video_stream: FFprobeStream | None,
+    audio_stream: FFprobeStream | None,
 ) -> BrowserMediaTypes:
     video_mime, audio_mime = get_container_mime_types(metadata)
     video_codec = get_video_codec_string(video_stream)
@@ -22,7 +23,7 @@ def get_browser_media_types(
     )
 
 
-def get_container_mime_types(metadata: dict[str, Any]) -> tuple[str | None, str | None]:
+def get_container_mime_types(metadata: SourceMetadata) -> tuple[str | None, str | None]:
     container = get_container_name(metadata)
     mime_types: dict[str, tuple[str | None, str | None]] = {
         'mp4': ('video/mp4', 'audio/mp4'),
@@ -36,7 +37,7 @@ def get_container_mime_types(metadata: dict[str, Any]) -> tuple[str | None, str 
     return mime_types.get(container, (None, None))
 
 
-def get_container_name(metadata: dict[str, Any]) -> str | None:
+def get_container_name(metadata: SourceMetadata) -> str | None:
     filename = metadata.get('format', {}).get('filename')
     if filename:
         suffix = Path(filename).suffix.lower()
@@ -68,7 +69,7 @@ def get_container_name(metadata: dict[str, Any]) -> str | None:
     return None
 
 
-def get_video_codec_string(stream: dict[str, Any] | None) -> str | None:
+def get_video_codec_string(stream: FFprobeStream | None) -> str | None:
     if not stream:
         return None
 
@@ -109,7 +110,7 @@ def get_video_codec_string(stream: dict[str, Any] | None) -> str | None:
 
 
 def get_audio_codec_string(
-    stream: dict[str, Any] | None, container_mime: str | None
+    stream: FFprobeStream | None, container_mime: str | None
 ) -> str | None:
     if not stream:
         return None

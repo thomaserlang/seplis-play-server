@@ -12,6 +12,7 @@ from seplis_play.client import client
 from seplis_play.database import database
 from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
 from seplis_play.scanners.movie.movie_schemas import PlayServerMovieCreate
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 
 from ..scan_base import PlayScan
 
@@ -58,7 +59,7 @@ class MovieScan(PlayScan):
                         logger.info(f'No movie found for {item} ({path})')
                         return False
                 try:
-                    metadata: dict[str, Any] = await self.get_metadata(path)
+                    metadata: SourceMetadata = await self.get_metadata(path)
                     if not metadata:
                         return False
 

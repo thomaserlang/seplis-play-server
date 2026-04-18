@@ -6,9 +6,9 @@ from iso639 import Lang
 
 from seplis_play import config, logger
 from seplis_play.database import database
-from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
 
 from ..scan_base import PlayScan
+from .subtitle_models import MExternalSubtitle
 
 
 class SubtitleInfo(TypedDict):
@@ -103,6 +103,3 @@ class SubtitleScan(PlayScan):
                 )
             )
             return [r for r in results]
-
-    async def get_metadata(self, path: str) -> dict[str, str]:
-        raise NotImplementedError()

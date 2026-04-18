@@ -15,7 +15,9 @@ from decimal import Decimal
 
 from loguru import logger
 
-from .ffmpeg_schemas import MediaInfo, TranscodeProgress
+from seplis_play.schemas.source_schemas import Source
+
+from .ffmpeg_schemas import TranscodeProgress
 
 
 class ProgressParser:
@@ -44,9 +46,7 @@ class ProgressParser:
         """Check if line contains progress info worth parsing."""
         return 'frame=' in line or 'size=' in line or 'time=' in line
 
-    def parse(
-        self, line: str, progress: TranscodeProgress, media_info: MediaInfo
-    ) -> bool:
+    def parse(self, line: str, progress: TranscodeProgress, source: Source) -> bool:
         """
         Parse FFmpeg progress line and update progress object.
 
@@ -113,9 +113,9 @@ class ProgressParser:
             except ValueError, TypeError:
                 pass
 
-        if media_info.duration > 0 and progress.time > 0:
+        if source.duration > 0 and progress.time > 0:
             progress.percent = min(
-                Decimal('99.9'), (progress.time / media_info.duration) * 100
+                Decimal('99.9'), (progress.time / source.duration) * 100
             )
 
         return found_progress
@@ -179,7 +179,7 @@ class FFmpegRunner:
     async def start(
         self,
         cmd: list[str],
-        media_info: MediaInfo,
+        source: Source,
         progress_callback: Callable[[TranscodeProgress], None] | None = None,
     ) -> asyncio.subprocess.Process | None:
         log_prefix = '[FFmpeg]'
@@ -198,7 +198,7 @@ class FFmpegRunner:
                 asyncio.create_task(
                     self._read_stderr(
                         self.process,
-                        media_info,
+                        source,
                         progress,
                         progress_parser,
                         progress_callback,
@@ -238,7 +238,7 @@ class FFmpegRunner:
     async def _read_stderr(
         self,
         process: asyncio.subprocess.Process,
-        media_info: MediaInfo,
+        source: Source,
         progress: TranscodeProgress,
         parser: ProgressParser,
         progress_callback: Callable[[TranscodeProgress], None] | None,
@@ -259,7 +259,7 @@ class FFmpegRunner:
                     self._stderr.pop(0)
 
                 if parser.should_parse(line_str):
-                    if parser.parse(line_str, progress, media_info):
+                    if parser.parse(line_str, progress, source):
                         if progress.frame > 0:
                             self._startup_event.set()
 

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any, cast
 from unittest import mock
 
 import httpx
@@ -8,6 +9,7 @@ import sqlalchemy as sa
 
 from seplis_play.database import Database
 from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
 
 
@@ -18,17 +20,20 @@ async def test_movies(play_db_test: Database) -> None:
 
     scanner = MovieScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
 
-    scanner.get_files = mock.MagicMock(
+    cast(Any, scanner).get_files = mock.MagicMock(
         return_value=[
             'Uncharted.mkv',
         ]
     )
-    scanner.get_metadata = mock.AsyncMock(
-        return_value={
-            'some': 'data',
-        }
+    cast(Any, scanner).get_metadata = mock.AsyncMock(
+        return_value=cast(
+            SourceMetadata,
+            {
+                'some': 'data',
+            },
+        )
     )
-    scanner.get_file_modified_time = mock.MagicMock(
+    cast(Any, scanner).get_file_modified_time = mock.MagicMock(
         return_value=datetime(2014, 11, 14, 21, 25, 58)
     )
 

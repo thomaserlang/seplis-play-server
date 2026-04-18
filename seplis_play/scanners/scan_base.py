@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from seplis_play import config, logger
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.utils.json_utils import json_loads
 
 
@@ -74,7 +75,7 @@ class PlayScan:
                     self._cached_paths[scan_path].append((dirname, file_))
                     yield (dirname, file_)
 
-    async def get_metadata(self, path: str) -> dict[str, Any]:
+    async def get_metadata(self, path: str) -> SourceMetadata:
         """
         :returns: dict
             metadata is a `dict` taken from the result of ffprobe.
@@ -112,7 +113,7 @@ class PlayScan:
             )
         if isinstance(data, bytes):
             data = data.decode('utf-8')
-        result: dict[str, Any] = json_loads(data)
+        result: SourceMetadata = json_loads(data)
         if config.extract_keyframes and path.endswith('.mkv'):
             result['keyframes'] = await self.get_keyframes(path)
         return result

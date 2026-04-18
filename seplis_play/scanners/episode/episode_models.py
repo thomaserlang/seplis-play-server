@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
 
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.utils.sa_base_utils import SABase
 from seplis_play.utils.sa_utc_datetime_utils import UtcDateTime
 
@@ -23,7 +23,7 @@ class MEpisode(SABase):
     series_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     number: Mapped[int | None] = mapped_column(sa.Integer)
     path: Mapped[str] = mapped_column(sa.Text, primary_key=True)
-    meta_data: Mapped[Any | None] = mapped_column('metadata', sa.JSON)
+    meta_data: Mapped[SourceMetadata | None] = mapped_column('metadata', sa.JSON)
     modified_time: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
 

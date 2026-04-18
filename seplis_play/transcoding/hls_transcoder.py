@@ -3,12 +3,15 @@ import math
 import os
 import re
 from decimal import Decimal
-from typing import Any
 from urllib.parse import urlencode
 
 from aiofile import AIOFile, LineReader
 
 from seplis_play import logger
+from seplis_play.schemas.source_metadata_schemas import (
+    SourceMetadata,
+    SourceSubtitleStream,
+)
 from seplis_play.transcoding.tests.test_transcode_schema import TranscodeSettings
 
 from . import base_transcoder
@@ -18,7 +21,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
     MEDIA_NAME: str = 'media.m3u8'
     CODECES = ('h264', 'hevc', 'av1')
 
-    def __init__(self, settings: TranscodeSettings, metadata: dict[str, Any]) -> None:
+    def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         if settings.transcode_video_codec not in self.CODECES:
             settings.transcode_video_codec = 'h264'
         settings.supported_video_codecs = [
@@ -84,8 +87,8 @@ class HlsTranscoder(base_transcoder.Transcoder):
                 async for line in LineReader(afp):
                     if isinstance(line, bytes):
                         line = line.decode()
-                    if '#' not in line:  # type: ignore
-                        m = re.search(r'(\d+)\.m4s', line)  # type: ignore
+                    if '#' not in line:
+                        m = re.search(r'(\d+)\.m4s', line)
                         if m:
                             last = int(m.group(1))
                             if first < 0:
@@ -128,7 +131,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
         playlist.append('#EXT-X-ENDLIST')
         return '\n'.join(playlist)
 
-    def get_subtitle_streams(self) -> list[tuple[int, dict]]:
+    def get_subtitle_streams(self) -> list[tuple[int, SourceSubtitleStream]]:
         result = []
         for i, stream in enumerate(self.metadata.get('streams', [])):
             if stream.get('codec_type') != 'subtitle':
@@ -176,16 +179,16 @@ class HlsTranscoder(base_transcoder.Transcoder):
         video_bitrate = self.get_video_bitrate()
         info.append(f'BANDWIDTH={video_bitrate}')
         info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
-        width = self.settings.max_width or self.media_info.width
-        if width > self.media_info.width:
-            width = self.media_info.width
-        if width != self.media_info.width:
-            height = round(self.media_info.height * width / self.media_info.width)
+        width = self.settings.max_width or self.source.width
+        if width > self.source.width:
+            width = self.source.width
+        if width != self.source.width:
+            height = round(self.source.height * width / self.source.width)
         else:
-            height = self.media_info.height
+            height = self.source.height
         info.append(f'RESOLUTION={width}x{height}')
         if self.can_copy_video:
-            color_transfer = self.media_info.color_transfer.lower()
+            color_transfer = self.source.color_transfer.lower()
             if color_transfer == 'smpte2084':
                 video_range = 'PQ'
             elif color_transfer == 'arib-std-b67':
@@ -205,7 +208,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
     def calculate_keyframe_segments(self) -> list[Decimal]:
         result: list[Decimal] = []
         target_duration = Decimal(self.segment_time())
-        keyframes = [Decimal(t) for t in self.metadata['keyframes']]
+        keyframes = [Decimal(t) for t in (self.metadata.get('keyframes') or [])]
         break_time = target_duration
         prev_keyframe = Decimal(0)
         for keyframe in keyframes:
@@ -213,13 +216,13 @@ class HlsTranscoder(base_transcoder.Transcoder):
                 result.append(keyframe - prev_keyframe)
                 prev_keyframe = keyframe
                 break_time += target_duration
-        result.append(self.media_info.duration - prev_keyframe)
+        result.append(self.source.duration - prev_keyframe)
         return result
 
     def calculate_equal_segments(self) -> list[Decimal]:
         target_duration = Decimal(self.segment_time())
-        segments = self.media_info.duration / target_duration
-        left_over = self.media_info.duration % target_duration
+        segments = self.source.duration / target_duration
+        left_over = self.source.duration % target_duration
         result = [target_duration for _ in range(int(segments))]
         if left_over:
             result.append(left_over)
@@ -255,8 +258,9 @@ class HlsTranscoder(base_transcoder.Transcoder):
         keyframe_args: list[dict[str, str | None]] = [
             {'-force_key_frames:0': f'expr:gte(t,n_forced*{self.segment_time()})'},
         ]
-        if self.video_stream.get('r_frame_rate'):
-            r_frame_rate = self.video_stream['r_frame_rate'].split('/')
+        r_frame_rate_value = self.video_stream.get('r_frame_rate')
+        if r_frame_rate_value:
+            r_frame_rate = r_frame_rate_value.split('/')
             r_frame_rate = Decimal(r_frame_rate[0]) / Decimal(r_frame_rate[1])
 
             v = math.ceil(Decimal(self.segment_time()) * r_frame_rate)
@@ -320,13 +324,13 @@ class HlsTranscoder(base_transcoder.Transcoder):
             return ''
         if self.video_output_codec == 'h264':
             return self.get_h264_codec_string(
-                self.video_stream['profile'],
-                self.video_stream['level'],
+                self.video_stream.get('profile', ''),
+                self.video_stream.get('level', 0),
             )
         if self.video_output_codec == 'hevc':
             return self.get_hevc_codec_string(
-                self.video_stream['profile'],
-                self.video_stream['level'],
+                self.video_stream.get('profile', ''),
+                self.video_stream.get('level', 0),
             )
         return ''
 
@@ -334,7 +338,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
         if self.audio_output_codec == 'aac':
             if self.can_copy_audio:
                 return self.get_aac_codec_string(
-                    self.audio_stream['profile'],
+                    self.audio_stream.get('profile', ''),
                 )
             return self.get_aac_codec_string('')
         if self.audio_output_codec == 'ac3':

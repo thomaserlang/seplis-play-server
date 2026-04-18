@@ -4,13 +4,15 @@ import os
 import sqlalchemy as sa
 from aiofile import async_open
 
-from seplis_play import config, database, logger, models
+from seplis_play import config, database, logger
+from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 
 from .base_transcoder import stream_index_by_lang, to_subprocess_arguments
 
 
 async def get_subtitle_file(
-    metadata: dict, lang: str, offset: int | float, output_format: str
+    metadata: SourceMetadata, lang: str, offset: int | float, output_format: str
 ) -> str | None:
     if not lang:
         return None
@@ -50,8 +52,8 @@ async def get_subtitle_file_from_external(
 ) -> str | None:
     async with database.session() as session:
         sub_metadata = await session.scalar(
-            sa.select(models.ExternalSubtitle).where(
-                models.ExternalSubtitle.id == id_,
+            sa.select(MExternalSubtitle).where(
+                MExternalSubtitle.id == id_,
             )
         )
     if not sub_metadata:

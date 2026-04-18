@@ -4,7 +4,6 @@ import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass as pydataclass
-from typing import Any
 
 from loguru import logger
 from pydantic import (
@@ -14,7 +13,12 @@ from pydantic import (
 
 from seplis_play import config
 from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
-from seplis_play.ffmpeg.ffmpeg_schemas import MediaInfo
+from seplis_play.schemas.source_metadata_schemas import (
+    SourceAudioStream,
+    SourceMetadata,
+    SourceVideoStream,
+)
+from seplis_play.schemas.source_schemas import Source
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 
@@ -72,10 +76,13 @@ class StreamIndex(BaseModel):
 
 
 class Transcoder:
-    def __init__(self, settings: TranscodeSettings, metadata: dict[str, Any]) -> None:
+    def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         self.settings = settings
         self.metadata = metadata
-        self.media_info = MediaInfo.from_ffprobe(metadata)
+        self.source = Source.from_source_metadata(
+            metadata=metadata,
+            index=settings.source_index,
+        )
         self.video_stream = self.get_video_stream()
         self.audio_stream = self.get_audio_stream()
         self.video_input_codec = self.video_stream['codec_name']
@@ -118,7 +125,7 @@ class Transcoder:
         try:
             self.process = await self.ffmpeg_runner.start(
                 args,
-                media_info=self.media_info,
+                source=self.source,
             )
             if not self.process:
                 return False
@@ -356,7 +363,7 @@ class Transcoder:
 
         if (
             self.settings.max_video_bitrate
-            and self.settings.max_video_bitrate < self.media_info.bitrate
+            and self.settings.max_video_bitrate < self.source.bitrate
         ):
             return DecisionCheck(
                 supported=False,
@@ -433,7 +440,7 @@ class Transcoder:
             if not self.audio_stream.get('disposition', {}).get('default') or (
                 default_count > 1
             ):
-                if self.audio_stream['group_index'] != 0:
+                if self.audio_stream.get('group_index', 0) != 0:
                     return DecisionCheck(
                         supported=False,
                         reasons=["Can't switch audio track"],
@@ -733,11 +740,11 @@ class Transcoder:
 
     def get_video_bitrate(self) -> int:
         if self.can_copy_video:
-            return self.media_info.bitrate
+            return self.source.bitrate
         return self.get_video_transcode_bitrate()
 
     def get_video_transcode_bitrate(self) -> int:
-        bitrate = self.settings.max_video_bitrate or self.media_info.bitrate
+        bitrate = self.settings.max_video_bitrate or self.source.bitrate
 
         if bitrate:
             upscaling = (
@@ -746,7 +753,7 @@ class Transcoder:
             )
             # only allow bitrate increase if upscaling
             if not upscaling:
-                bitrate = self._min_video_bitrate(self.media_info.bitrate, bitrate)
+                bitrate = self._min_video_bitrate(self.source.bitrate, bitrate)
 
             bitrate = self._video_scale_bitrate(
                 bitrate, self.video_input_codec, self.settings.transcode_video_codec
@@ -794,15 +801,18 @@ class Transcoder:
     def stream_index_by_lang(self, codec_type: str, lang: str) -> StreamIndex | None:
         return stream_index_by_lang(self.metadata, codec_type, lang)
 
-    def get_video_stream(self) -> dict[str, Any]:
+    def get_video_stream(self) -> SourceVideoStream:
         return get_video_stream(self.metadata)
 
-    def get_audio_stream(self) -> dict[str, Any]:
+    def get_audio_stream(self) -> SourceAudioStream:
         index = self.stream_index_by_lang('audio', self.settings.audio_lang or '')
         if index is None:
             raise Exception('No audio stream with specified language')
-        self.metadata['streams'][index.index]['group_index'] = index.group_index
-        return self.metadata['streams'][index.index]
+        stream = self.metadata['streams'][index.index]
+        if stream['codec_type'] != 'audio':
+            raise Exception('Selected stream is not audio')
+        stream['group_index'] = index.group_index
+        return stream
 
     def find_ffmpeg_arg(self, key: str) -> str | int | float | None:
         for a in self.ffmpeg_args:
@@ -833,7 +843,7 @@ class Transcoder:
 
 
 def to_subprocess_arguments(
-    args: list[Mapping[str, str | int | float | None]],
+    args: Sequence[Mapping[str, str | int | float | None]],
 ) -> list[str]:
     arguments = []
     for a in args:
@@ -844,28 +854,29 @@ def to_subprocess_arguments(
     return arguments
 
 
-def get_video_stream(metadata: dict) -> dict[str, Any]:
+def get_video_stream(metadata: SourceMetadata) -> SourceVideoStream:
     for stream in metadata['streams']:
         if stream['codec_type'] == 'video':
             return stream
     raise Exception('No video stream')
 
 
-def get_video_color(source: dict) -> VideoColor:
+def get_video_color(stream: SourceVideoStream) -> VideoColor:
     if (
-        source.get('color_transfer') == 'smpte2084'
-        and source.get('color_primaries') == 'bt2020'
+        stream.get('color_transfer') == 'smpte2084'
+        and stream.get('color_primaries') == 'bt2020'
     ):
         return VideoColor(range='hdr', range_type='hdr10')
 
-    if source.get('color_transfer') == 'arib-std-b67':
+    if stream.get('color_transfer') == 'arib-std-b67':
         return VideoColor(range='hdr', range_type='hlg')
 
-    if source.get('codec_tag_string') in ('dovi', 'dvh1', 'dvhe', 'dav1'):
+    if stream.get('codec_tag_string') in ('dovi', 'dvh1', 'dvhe', 'dav1'):
         return VideoColor(range='hdr', range_type='dovi')
 
-    if source.get('side_data_list'):
-        for s in source['side_data_list']:
+    side_data_list = stream.get('side_data_list')
+    if side_data_list:
+        for s in side_data_list:
             if (
                 s.get('dv_profile') in (5, 7, 8)
                 and s.get('rpu_present_flag')
@@ -877,8 +888,8 @@ def get_video_color(source: dict) -> VideoColor:
     return VideoColor(range='sdr', range_type='sdr')
 
 
-def get_video_color_bit_depth(source: dict) -> int:
-    pix_fmt = source['pix_fmt']
+def get_video_color_bit_depth(stream: SourceVideoStream) -> int:
+    pix_fmt = stream['pix_fmt']
     if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
         return 10
     if pix_fmt in ('yuv420p12le', 'yuv444p12le'):
@@ -887,7 +898,7 @@ def get_video_color_bit_depth(source: dict) -> int:
 
 
 def stream_index_by_lang(
-    metadata: dict, codec_type: str, lang: str | None
+    metadata: SourceMetadata, codec_type: str, lang: str | None
 ) -> StreamIndex | None:
     logger.debug(f'Looking for {codec_type} with language {lang}')
     group_index = -1
@@ -905,9 +916,8 @@ def stream_index_by_lang(
                 stream_language = stream['tags'].get('language') or stream['tags'].get(
                     'title'
                 )
-                if (
-                    stream['codec_type'] != codec_type
-                    or stream_language.lower() != lang.lower()
+                if stream['codec_type'] != codec_type or (
+                    stream_language and stream_language.lower() != lang.lower()
                 ):
                     index = None
         else:

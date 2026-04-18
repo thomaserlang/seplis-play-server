@@ -1,5 +1,3 @@
-from typing import Any
-
 import jwt
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -8,9 +6,10 @@ from seplis_play import config, database, logger
 from seplis_play.scanners.episode.episode_models import MEpisode
 from seplis_play.scanners.movie.movie_models import MMovie
 from seplis_play.schemas.page_id_schema import PlayId
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 
 
-async def get_sources(play_id: str) -> list[dict[str, Any]]:
+async def get_sources(play_id: str) -> list[SourceMetadata]:
     data = decode_play_id(play_id)
     if data.type == 'series':
         query = select(MEpisode.meta_data).where(
@@ -28,7 +27,7 @@ async def get_sources(play_id: str) -> list[dict[str, Any]]:
         return [d for d in r if d]
 
 
-async def get_metadata(play_id: str, source_index: int) -> dict[str, Any]:
+async def get_metadata(play_id: str, source_index: int) -> SourceMetadata:
     metadatas = await get_sources(play_id)
     if source_index > (len(metadatas) - 1):
         raise HTTPException(404, 'No metadata')

@@ -1,9 +1,10 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import StringConstraints
 
 from ..dependencies import get_metadata
+from ..schemas.source_metadata_schemas import SourceMetadata
 from ..transcoding.subtitle_transcoder import (
     get_subtitle_file,
     get_subtitle_file_from_external,
@@ -15,7 +16,7 @@ router = APIRouter()
 @router.get('/subtitle-file', name='Download subtitle file')
 async def download_subtitle_route(
     lang: Annotated[str, StringConstraints(min_length=1)],
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
     offset: int | float = 0,
     output_format: Literal['webvtt', 'ass'] = 'webvtt',
 ) -> Response:

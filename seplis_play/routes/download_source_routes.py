@@ -1,7 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 from mimetypes import guess_type
-from typing import Annotated, Any
+from typing import Annotated
 
 from aiofile import async_open
 from anyio import to_thread
@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..dependencies import get_metadata
+from ..schemas.source_metadata_schemas import SourceMetadata
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ router = APIRouter()
 @router.head('/source', name='Download source (HEAD)')
 async def download_source_route(  # noqa: ANN201
     request: Request,
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ):
     path: str = metadata['format']['filename']
     filename: str = os.path.basename(path)

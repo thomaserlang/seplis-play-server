@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from seplis_play import config
-from seplis_play.schemas import PlayId
+from seplis_play.schemas.page_id_schema import PlayId
 
 from ..dependencies import decode_play_id
 

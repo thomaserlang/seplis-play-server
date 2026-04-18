@@ -1,10 +1,11 @@
 import asyncio
 
 from seplis_play.routes.request_media_routes import request_media_route
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.transcoding.base_transcoder import Transcoder, sessions
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
-TRANSCODE_METADATA = {
+TRANSCODE_METADATA: SourceMetadata = {
     'streams': [
         {
             'index': 0,
@@ -29,12 +30,13 @@ TRANSCODE_METADATA = {
         'filename': '/tmp/movie.mkv',
         'format_name': 'matroska,webm',
         'duration': '3486.590000',
+        'size': '2743430123',
         'bit_rate': '6294815',
     },
     'keyframes': ['0.000000', '6.715000'],
 }
 
-DIRECT_PLAY_METADATA = {
+DIRECT_PLAY_METADATA: SourceMetadata = {
     'streams': [
         {
             'index': 0,
@@ -62,6 +64,7 @@ DIRECT_PLAY_METADATA = {
         'filename': '/tmp/movie.mp4',
         'format_name': 'mp4',
         'duration': '3486.590000',
+        'size': '2743430123',
         'bit_rate': '2500000',
     },
     'keyframes': ['0.000000', '6.715000'],

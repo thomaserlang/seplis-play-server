@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends
@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 from ..dependencies import get_metadata
+from ..schemas.source_metadata_schemas import SourceMetadata
 from ..transcoding.base_transcoder import TranscodeDecision, Transcoder
 
 router = APIRouter()
@@ -25,7 +26,7 @@ class RequestMedia(BaseModel):
 async def request_media_route(
     source_index: int,
     settings: Annotated[TranscodeSettings, Depends()],
-    metadata: Annotated[dict[str, Any], Depends(get_metadata)],
+    metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> RequestMedia:
     t = Transcoder(settings=settings, metadata=metadata)
     hls_file = 'main' if settings.include_subtitles else 'media'

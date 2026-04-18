@@ -7,7 +7,7 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 
 
-class UtcDateTime(TypeDecorator):  # type: ignore
+class UtcDateTime(TypeDecorator):
     impl = sa.DateTime(timezone=True)
     cache_ok = True
 

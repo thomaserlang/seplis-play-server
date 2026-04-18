@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any, cast
 from unittest import mock
 
 import httpx
@@ -11,6 +12,7 @@ from seplis_play.scan import EpisodeScan
 from seplis_play.scanners.episode.episode_models import MEpisode
 from seplis_play.scanners.episode.episode_schemas import Episode, ParsedFileEpisode
 from seplis_play.schemas.page_cursor_schema import PageCursorResult
+from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
 
 
@@ -87,14 +89,19 @@ async def test_series_id_lookup(play_db_test: Database) -> None:
 @pytest.mark.asyncio
 async def test_save_item(play_db_test: Database) -> None:
     scanner = EpisodeScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
-    scanner.get_file_modified_time = mock.MagicMock(
+    mock_get_file_modified_time = mock.MagicMock(
         return_value=datetime(2014, 11, 14, 21, 25, 58)
     )
-    scanner.get_metadata = mock.AsyncMock(
-        return_value={
-            'some': 'data',
-        }
+    cast(Any, scanner).get_file_modified_time = mock_get_file_modified_time
+    mock_get_metadata = mock.AsyncMock(
+        return_value=cast(
+            SourceMetadata,
+            {
+                'some': 'data',
+            },
+        )
     )
+    cast(Any, scanner).get_metadata = mock_get_metadata
     episodes = []
     episodes.append(
         (
@@ -134,7 +141,7 @@ async def test_save_item(play_db_test: Database) -> None:
         for episode in episodes:
             await scanner.save_item(episode[0], episode[1])
 
-    scanner.get_metadata.assert_has_calls(
+    mock_get_metadata.assert_has_calls(
         [
             mock.call('/ncis/ncis.s01e02.mp4'),
             mock.call('/ncis/ncis.2014-11-14.mp4'),
@@ -142,16 +149,16 @@ async def test_save_item(play_db_test: Database) -> None:
         ]
     )
 
-    scanner.get_metadata.reset_mock()
+    mock_get_metadata.reset_mock()
     for episode in episodes:
         await scanner.save_item(episode[0], episode[1])
-    scanner.get_metadata.assert_has_calls([])
+    mock_get_metadata.assert_has_calls([])
 
-    scanner.get_metadata.reset_mock()
-    scanner.get_file_modified_time.return_value = datetime(2014, 11, 15, 21, 25, 58)
+    mock_get_metadata.reset_mock()
+    mock_get_file_modified_time.return_value = datetime(2014, 11, 15, 21, 25, 58)
     with mock.patch('os.path.exists') as mock_get_files:
         await scanner.save_item(episodes[1][0], episodes[1][1])
-    scanner.get_metadata.assert_has_calls(
+    mock_get_metadata.assert_has_calls(
         [mock.call('/ncis/ncis.2014-11-14.mp4')],
     )
 
