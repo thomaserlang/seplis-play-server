@@ -41,7 +41,7 @@ async def request_media_route(
     hls_file = 'main' if settings.include_subtitles else 'media'
     return RequestMedia(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
-        can_direct_play=t.transcode_decision.direct_play.allowed,
+        can_direct_play=t.transcode_decision.direct_play.supported,
         direct_play_media_type=media_types.direct_play_media_type,
         video_media_type=media_types.video_media_type,
         audio_media_type=media_types.audio_media_type,
