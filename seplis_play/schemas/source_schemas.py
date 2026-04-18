@@ -12,6 +12,7 @@ class SourceStream:
     language: str | None
     index: int
     codec: str | None
+    channels: int | None = None
     group_index: int | None = None
     default: bool = False
     forced: bool = False
@@ -90,6 +91,7 @@ class Source:
                 language=lang,
                 index=stream['index'],
                 codec=stream.get('codec_name'),
+                channels=stream.get('channels'),
                 default=stream.get('disposition', {}).get('default', 0) == 1,
                 forced=stream.get('disposition', {}).get('forced', 0) == 1,
             )
