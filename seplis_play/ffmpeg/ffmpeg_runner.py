@@ -145,6 +145,7 @@ class FFmpegRunner:
         self._startup_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
         self._stderr: list[str] = []
+        self._termination_requested = False
         self.process: asyncio.subprocess.Process | None = None
         self.cmd: list[str] = []
         self.paused = False
@@ -185,6 +186,7 @@ class FFmpegRunner:
         log_prefix = '[FFmpeg]'
         logger.info(f'{log_prefix} Running: {shlex.join(cmd)}')
         self.cmd = cmd
+        self._termination_requested = False
 
         self.process = await self._spawn_process(cmd, log_prefix)
         if self.process is None:
@@ -272,7 +274,7 @@ class FFmpegRunner:
             logger.error(f'{log_prefix} stderr reader error: {e}')
         finally:
             await asyncio.wait_for(process.wait(), timeout=5.0)
-            if process.returncode and process.returncode > 0:
+            if self._should_log_exit_error(process.returncode):
                 logger.error(
                     f'{log_prefix} FFmpeg exited with code {process.returncode}. '
                     f'\n{"".join(self._stderr)}'
@@ -281,10 +283,22 @@ class FFmpegRunner:
                 await self._graceful_terminate(process)
             self._startup_event.set()
 
+    def _should_log_exit_error(self, returncode: int | None) -> bool:
+        if returncode is None or returncode <= 0:
+            return False
+
+        stderr = ''.join(self._stderr)
+        interrupted_normally = (
+            'Exiting normally, received signal 2.' in stderr
+            or 'received signal 2' in stderr
+        )
+        return not (self._termination_requested and interrupted_normally)
+
     async def _graceful_terminate(self, process: asyncio.subprocess.Process) -> None:
         try:
             if process.returncode is not None:
                 return
+            self._termination_requested = True
             try:
                 process.send_signal(signal.SIGINT)
             except ProcessLookupError, OSError:
