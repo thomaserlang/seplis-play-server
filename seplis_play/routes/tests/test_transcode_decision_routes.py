@@ -1,14 +1,12 @@
 import asyncio
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
-from seplis_play.dependencies import get_metadata
-from seplis_play.routes import request_media_routes, transcode_decision_routes
 from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
+from seplis_play.routes.request_media_routes import request_media_route
+from seplis_play.routes.transcode_decision_routes import get_transcode_decision_route
 from seplis_play.transcoding.base_transcoder import SessionModel, Transcoder, sessions
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
-
 
 TRANSCODE_METADATA = {
     'streams': [
@@ -46,16 +44,19 @@ DIRECT_PLAY_METADATA = {
             'index': 0,
             'codec_name': 'h264',
             'codec_type': 'video',
+            'profile': 'High',
             'codec_tag_string': 'avc1',
             'width': 1920,
             'height': 1080,
             'pix_fmt': 'yuv420p',
+            'level': 40,
             'r_frame_rate': '24000/1001',
         },
         {
             'index': 1,
             'codec_name': 'aac',
             'codec_type': 'audio',
+            'profile': 'LC',
             'sample_rate': '48000',
             'channels': 2,
             'disposition': {'default': 1},
@@ -101,39 +102,36 @@ def test_transcoder_collects_human_readable_transcode_reasons() -> None:
 
 def test_request_media_exposes_transcode_decision_by_session() -> None:
     sessions.clear()
-    app = FastAPI()
-    app.include_router(request_media_routes.router)
-    app.include_router(transcode_decision_routes.router)
-
-    async def _get_metadata(play_id: str, source_index: int) -> dict:
-        assert play_id == 'play-id'
-        assert source_index == 0
-        return DIRECT_PLAY_METADATA
-
-    app.dependency_overrides[get_metadata] = _get_metadata
-    client = TestClient(app)
-
     session = 'b' * 32
-    response = client.get(
-        '/request-media',
-        params={
-            'play_id': 'play-id',
-            'session': session,
-            'source_index': 0,
-            'supported_video_codecs': 'h264',
-            'supported_audio_codecs': 'aac',
-            'supported_video_containers': 'mp4',
-        },
+    response = asyncio.run(
+        request_media_route(
+            source_index=0,
+            settings=TranscodeSettings(
+                play_id='play-id',
+                session=session,
+                source_index=0,
+                supported_hdr_formats=[],
+                supported_video_codecs=['h264'],
+                supported_audio_codecs=['aac'],
+                supported_video_containers=['mp4'],
+            ),
+            metadata=DIRECT_PLAY_METADATA,
+        )
     )
 
-    assert response.status_code == 200
-    assert response.json()['can_direct_play'] is True
-    assert response.json()['transcode_decision_url'] == (f'/transcode-decision/{session}')
+    assert response.can_direct_play is True
+    assert response.direct_play_media_type == (
+        'video/mp4; codecs="avc1.640028, mp4a.40.2"'
+    )
+    assert response.video_media_type == 'video/mp4; codecs="avc1.640028"'
+    assert response.audio_media_type == 'audio/mp4; codecs="mp4a.40.2"'
+    assert response.transcode_decision_url == f'/transcode-decision/{session}'
 
     decision = Transcoder(
         settings=TranscodeSettings(
             play_id='play-id',
             session=session,
+            supported_hdr_formats=[],
             supported_video_codecs=['h264'],
             supported_audio_codecs=['aac'],
             supported_video_containers=['mp4'],
@@ -147,14 +145,13 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
             call_later=loop.call_later(60, lambda: None),
             transcode_decision=decision,
         )
-        decision_response = client.get(f'/transcode-decision/{session}')
+        decision_response = asyncio.run(get_transcode_decision_route(session))
     finally:
         sessions[session].call_later.cancel()
         del sessions[session]
         loop.close()
 
-    assert decision_response.status_code == 200
-    assert decision_response.json() == {
+    assert decision_response.model_dump() == {
         'session': session,
         'video_copy': {
             'allowed': True,
@@ -176,11 +173,10 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
 
 def test_transcode_decision_route_returns_404_for_unknown_session() -> None:
     sessions.clear()
-    app = FastAPI()
-    app.include_router(transcode_decision_routes.router)
-    client = TestClient(app)
-
-    response = client.get('/transcode-decision/missing-session')
-
-    assert response.status_code == 404
-    assert response.json() == {'detail': 'Unknown session'}
+    try:
+        asyncio.run(get_transcode_decision_route('missing-session'))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == 'Unknown session'
+    else:
+        raise AssertionError('Expected HTTPException')
