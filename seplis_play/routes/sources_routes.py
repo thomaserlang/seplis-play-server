@@ -6,11 +6,13 @@ from iso639 import Lang
 from pydantic import BaseModel
 
 from .. import database, logger, models
+from ..browser_media_types import get_browser_media_types
 from ..dependencies import get_sources as deps_get_sources
 from ..transcoding.base_transcoder import (
     get_video_color,
     get_video_color_bit_depth,
     get_video_stream,
+    stream_index_by_lang,
 )
 
 router = APIRouter()
@@ -31,6 +33,7 @@ class SourceModel(BaseModel):
     height: int
     resolution: str
     codec: str
+    media_type: str | None = None
     duration: float
     audio: list[SourceStreamModel] = []
     subtitles: list[SourceStreamModel] = []
@@ -52,13 +55,21 @@ async def get_sources_route(
     data: list[SourceModel] = []
     for i, metad in enumerate(sources):
         video = get_video_stream(metad)
+        audio_index = stream_index_by_lang(metad, 'audio', None)
+        audio = metad['streams'][audio_index.index] if audio_index else None
         if not video:
             raise HTTPException(500, 'No video stream')
         color_range = get_video_color(video)
+        media_types = get_browser_media_types(
+            metadata=metad,
+            video_stream=video,
+            audio_stream=audio,
+        )
         d = SourceModel(
             width=video['width'],
             height=video['height'],
             codec=video['codec_name'],
+            media_type=media_types.media_type,
             duration=metad['format']['duration'],
             video_color_bit_depth=get_video_color_bit_depth(video),
             video_color_range=color_range.range,

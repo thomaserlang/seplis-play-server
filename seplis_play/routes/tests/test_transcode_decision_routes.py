@@ -117,11 +117,6 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
     )
 
     assert response.can_direct_play is True
-    assert response.direct_play_media_type == (
-        'video/mp4; codecs="avc1.640028, mp4a.40.2"'
-    )
-    assert response.video_media_type == 'video/mp4; codecs="avc1.640028"'
-    assert response.audio_media_type == 'audio/mp4; codecs="mp4a.40.2"'
     assert response.transcode_decision
     assert response.transcode_decision.model_dump() == {
         'session': session,

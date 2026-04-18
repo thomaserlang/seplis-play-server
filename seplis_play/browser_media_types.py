@@ -5,9 +5,7 @@ from pydantic import BaseModel
 
 
 class BrowserMediaTypes(BaseModel):
-    direct_play_media_type: str | None
-    video_media_type: str | None
-    audio_media_type: str | None
+    media_type: str | None
 
 
 def get_browser_media_types(
@@ -20,9 +18,7 @@ def get_browser_media_types(
     audio_codec = get_audio_codec_string(audio_stream, container_mime=audio_mime)
 
     return BrowserMediaTypes(
-        direct_play_media_type=_format_media_type(video_mime, video_codec, audio_codec),
-        video_media_type=_format_media_type(video_mime, video_codec),
-        audio_media_type=_format_media_type(audio_mime, audio_codec),
+        media_type=_format_media_type(video_mime, video_codec, audio_codec),
     )
 
 
