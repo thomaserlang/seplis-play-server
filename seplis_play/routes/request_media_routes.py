@@ -8,7 +8,7 @@ from seplis_play.browser_media_types import get_browser_media_types
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 from ..dependencies import get_metadata
-from ..transcoding.base_transcoder import Transcoder
+from ..transcoding.base_transcoder import TranscodeDecision, Transcoder
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ class RequestMedia(BaseModel):
     hls_url: str
     keep_alive_url: str
     close_session_url: str
-    transcode_decision_url: str
+    transcode_decision: TranscodeDecision
 
 
 @router.get('/request-media', name='Request media')
@@ -48,5 +48,5 @@ async def request_media_route(
         hls_url=f'/hls/{hls_file}.m3u8?{urlencode(settings.to_args_dict())}',
         keep_alive_url=f'/keep-alive/{settings.session}',
         close_session_url=f'/close-session/{settings.session}',
-        transcode_decision_url=f'/transcode-decision/{settings.session}',
+        transcode_decision=t.transcode_decision,
     )
