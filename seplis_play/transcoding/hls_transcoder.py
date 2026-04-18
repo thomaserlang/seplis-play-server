@@ -85,8 +85,8 @@ class HlsTranscoder(base_transcoder.Transcoder):
         if os.path.exists(f):
             async with AIOFile(f, 'r') as afp:
                 async for line in LineReader(afp):
-                    if isinstance(line, bytes):
-                        line = line.decode()
+                    if not isinstance(line, str):
+                        line = bytes(line).decode()
                     if '#' not in line:
                         m = re.search(r'(\d+)\.m4s', line)
                         if m:
@@ -152,7 +152,7 @@ class HlsTranscoder(base_transcoder.Transcoder):
         playlist = ['#EXTM3U']
 
         for i, stream in subtitle_streams:
-            tags = stream['tags']
+            tags = stream.get('tags', {})
             lang = tags.get('language') or tags.get('title') or 'und'
             name = tags.get('title') or lang
             lang_param = f'{lang}:{i}'
