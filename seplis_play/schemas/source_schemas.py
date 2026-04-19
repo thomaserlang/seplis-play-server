@@ -46,13 +46,13 @@ class Source:
             get_video_color,
             get_video_color_bit_depth,
             get_video_stream,
-            stream_index_by_lang,
         )
         from seplis_play.utils.browser_media_types_utils import get_browser_media_types
 
         video = get_video_stream(metadata)
-        audio_index = stream_index_by_lang(metadata, 'audio', None)
-        audio = metadata['streams'][audio_index.index] if audio_index else None
+        audio_streams = source_streams_from_metadata(metadata, 'audio')
+        subtitle_streams = source_streams_from_metadata(metadata, 'subtitle')
+        audio = metadata['streams'][audio_streams[0].index] if audio_streams else None
         color_range = get_video_color(video)
         media_types = get_browser_media_types(
             metadata=metadata,
@@ -77,34 +77,42 @@ class Source:
             fps=source_fps(video.get('r_frame_rate')),
         )
 
-        for stream in metadata['streams']:
-            tags = stream.get('tags')
-            if not tags:
-                continue
-            title = tags.get('title')
-            lang = tags.get('language')
-            if not title and not lang:
-                continue
+        source.audio.extend(audio_streams)
+        source.subtitles.extend(subtitle_streams)
 
-            source_stream = SourceStream(
+        return source
+
+
+def source_streams_from_metadata(
+    metadata: SourceMetadata, codec_type: str
+) -> list[SourceStream]:
+    result: list[SourceStream] = []
+    for stream in metadata['streams']:
+        tags = stream.get('tags')
+        if stream['codec_type'] != codec_type:
+            continue
+        if codec_type == 'subtitle' and stream['codec_name'] in (
+            'dvd_subtitle',
+            'hdmv_pgs_subtitle',
+        ):
+            continue
+        title = tags.get('title') if tags else None
+        lang = tags.get('language') if tags else None
+        if codec_type == 'subtitle' and not title and not lang:
+            continue
+        result.append(
+            SourceStream(
                 title=title,
                 language=lang,
                 index=stream['index'],
                 codec=stream.get('codec_name'),
                 channels=stream.get('channels'),
+                group_index=len(result),
                 default=stream.get('disposition', {}).get('default', 0) == 1,
                 forced=stream.get('disposition', {}).get('forced', 0) == 1,
             )
-            if stream['codec_type'] == 'audio':
-                source_stream.group_index = len(source.audio)
-                source.audio.append(source_stream)
-            elif stream['codec_type'] == 'subtitle' and stream['codec_name'] not in (
-                'dvd_subtitle',
-                'hdmv_pgs_subtitle',
-            ):
-                source.subtitles.append(source_stream)
-
-        return source
+        )
+    return result
 
 
 def resolution_text(width: int, height: int) -> str:

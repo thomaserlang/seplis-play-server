@@ -29,7 +29,11 @@ async def request_media_route(
     metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> RequestMedia:
     t = Transcoder(settings=settings, metadata=metadata)
-    hls_file = 'main' if settings.include_subtitles else 'media'
+    hls_file = (
+        'main'
+        if settings.hls_include_all_subtitles or settings.hls_subtitle_lang
+        else 'media'
+    )
     return RequestMedia(
         direct_play_url=f'/source?play_id={settings.play_id}&source_index={source_index}',
         can_direct_play=t.transcode_decision.direct_play.supported,

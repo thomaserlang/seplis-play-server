@@ -59,7 +59,9 @@ def test_transcode_settings_are_parsed_like_fastapi_query_params() -> None:
         'start_time': '0',
         'start_segment': None,
         'audio_lang': None,
-        'include_subtitles': False,
+        'hls_include_all_subtitles': False,
+        'hls_subtitle_lang': None,
+        'hls_subtitle_offset': None,
         'max_audio_channels': None,
         'max_width': 1920,
         'max_video_bitrate': None,
@@ -107,14 +109,14 @@ def test_transcode_settings_include_subtitles_defaults_to_false_and_can_be_enabl
         params={
             'play_id': 'play-id',
             'session': 'b' * 32,
-            'include_subtitles': 'true',
+            'hls_include_all_subtitles': 'true',
         },
     )
 
     assert default_response.status_code == 200
-    assert default_response.json()['include_subtitles'] is False
+    assert default_response.json()['hls_include_all_subtitles'] is False
     assert enabled_response.status_code == 200
-    assert enabled_response.json()['include_subtitles'] is True
+    assert enabled_response.json()['hls_include_all_subtitles'] is True
 
 
 def test_transcode_settings_validation_errors_match_fastapi_response() -> None:

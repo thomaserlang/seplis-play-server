@@ -14,11 +14,11 @@ from pydantic import (
 from seplis_play import config
 from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
 from seplis_play.schemas.source_metadata_schemas import (
-    SourceAudioStream,
     SourceMetadata,
-    SourceVideoStream,
+    SourceMetadataAudioStream,
+    SourceMetadataVideoStream,
 )
-from seplis_play.schemas.source_schemas import Source
+from seplis_play.schemas.source_schemas import Source, SourceStream
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 
@@ -284,9 +284,7 @@ class Transcoder:
         if codec == 'copy':
             return
 
-        width = self.settings.max_width or self.video_stream['width']
-        if width > self.video_stream['width']:
-            width = self.video_stream['width']
+        width = self.get_output_width()
 
         if config.ffmpeg_hwaccel_enabled:
             self.ffmpeg_args.append({'-noautoscale': None})
@@ -300,6 +298,21 @@ class Transcoder:
         if vf:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
         self.ffmpeg_args.extend(self.get_quality_params(width, codec))
+
+    def get_output_width(self) -> int:
+        width = self.settings.max_width or self.video_stream['width']
+        if width > self.video_stream['width']:
+            width = self.video_stream['width']
+        return width
+
+    def get_output_resolution(self) -> tuple[int, int]:
+        width = self.get_output_width()
+        if width != self.video_stream['width']:
+            return (
+                width,
+                round(self.video_stream['height'] * width / self.video_stream['width']),
+            )
+        return (self.video_stream['width'], self.video_stream['height'])
 
     def evaluate_can_copy_video(self, check_key_frames: bool = True) -> DecisionCheck:
         if self.settings.force_transcode:
@@ -757,7 +770,6 @@ class Transcoder:
                 bitrate, self.video_input_codec, self.settings.transcode_video_codec
             )
 
-            # don't exceed the requested bitrate
             if self.settings.max_video_bitrate:
                 bitrate = min(bitrate, self.settings.max_video_bitrate)
 
@@ -796,21 +808,24 @@ class Transcoder:
             scale_factor = max(scale_factor, 2)
         return int(scale_factor * bitrate)
 
-    def stream_index_by_lang(self, codec_type: str, lang: str) -> StreamIndex | None:
-        return stream_index_by_lang(self.metadata, codec_type, lang)
+    def stream_by_lang(
+        self, streams: list[SourceStream], lang: str | None
+    ) -> SourceStream | None:
+        return stream_by_lang(streams, lang)
 
-    def get_video_stream(self) -> SourceVideoStream:
+    def get_video_stream(self) -> SourceMetadataVideoStream:
         return get_video_stream(self.metadata)
 
-    def get_audio_stream(self) -> SourceAudioStream:
-        index = self.stream_index_by_lang('audio', self.settings.audio_lang or '')
-        if index is None:
-            raise Exception('No audio stream with specified language')
-        stream = self.metadata['streams'][index.index]
-        if stream['codec_type'] != 'audio':
+    def get_audio_stream(self) -> SourceMetadataAudioStream:
+        stream = self.stream_by_lang(self.source.audio, self.settings.audio_lang)
+        if stream is None and self.source.audio:
+            stream = self.source.audio[0]
+        if stream is None:
+            raise Exception('No audio stream')
+        stream_metadata = self.metadata['streams'][stream.index]
+        if stream_metadata['codec_type'] != 'audio':
             raise Exception('Selected stream is not audio')
-        stream['group_index'] = index.group_index
-        return stream
+        return stream_metadata
 
     def find_ffmpeg_arg(self, key: str) -> str | int | float | None:
         for a in self.ffmpeg_args:
@@ -852,14 +867,14 @@ def to_subprocess_arguments(
     return arguments
 
 
-def get_video_stream(metadata: SourceMetadata) -> SourceVideoStream:
+def get_video_stream(metadata: SourceMetadata) -> SourceMetadataVideoStream:
     for stream in metadata['streams']:
         if stream['codec_type'] == 'video':
             return stream
     raise Exception('No video stream')
 
 
-def get_video_color(stream: SourceVideoStream) -> VideoColor:
+def get_video_color(stream: SourceMetadataVideoStream) -> VideoColor:
     if (
         stream.get('color_transfer') == 'smpte2084'
         and stream.get('color_primaries') == 'bt2020'
@@ -886,7 +901,7 @@ def get_video_color(stream: SourceVideoStream) -> VideoColor:
     return VideoColor(range='sdr', range_type='sdr')
 
 
-def get_video_color_bit_depth(stream: SourceVideoStream) -> int:
+def get_video_color_bit_depth(stream: SourceMetadataVideoStream) -> int:
     pix_fmt = stream['pix_fmt']
     if pix_fmt in ('yuv420p10le', 'yuv444p10le'):
         return 10
@@ -895,52 +910,33 @@ def get_video_color_bit_depth(stream: SourceVideoStream) -> int:
     return 8
 
 
-def stream_index_by_lang(
-    metadata: SourceMetadata, codec_type: str, lang: str | None
-) -> StreamIndex | None:
-    logger.debug(f'Looking for {codec_type} with language {lang}')
-    group_index = -1
+def stream_by_lang(streams: list[SourceStream], lang: str | None) -> SourceStream | None:
+    logger.debug(f'Looking for stream with language {lang}')
     langs = []
     lang = '' if lang is None else lang
-    index = None
+    group_index = None
     if ':' in lang:
-        lang, index = lang.split(':')
-        index = int(index)
-        if index <= (len(metadata['streams']) - 1):
-            stream = metadata['streams'][index]
-            if 'tags' not in stream:
-                index = None
-            else:
-                stream_language = stream['tags'].get('language') or stream['tags'].get(
-                    'title'
-                )
-                if stream['codec_type'] != codec_type or (
-                    stream_language and stream_language.lower() != lang.lower()
-                ):
-                    index = None
-        else:
-            index = None
-    first = None
-    for i, stream in enumerate(metadata['streams']):
-        if stream['codec_type'] == codec_type:
-            group_index += 1
-            if not first:
-                first = StreamIndex(index=i, group_index=group_index)
-            if lang == '' and stream.get('disposition', {}).get('default'):
-                return StreamIndex(index=i, group_index=group_index)
-            if 'tags' in stream and lang:
-                stream_language = stream['tags'].get('language') or stream['tags'].get(
-                    'title'
-                )
-                if not stream_language:
-                    continue
-                langs.append(stream_language)
-                if not index or stream['index'] == index:
-                    if stream_language.lower() == lang.lower():
-                        return StreamIndex(index=i, group_index=group_index)
-    logger.warning(f'Found no {codec_type} with language: {lang}')
-    logger.warning(f'Available {codec_type}: {", ".join(langs)}')
-    return first
+        lang, group_index = lang.split(':')
+        group_index = int(group_index)
+        stream = next(
+            (stream for stream in streams if stream.group_index == group_index), None
+        )
+        if not stream or (stream.language and stream.language.lower() != lang.lower()):
+            group_index = None
+
+    for stream in streams:
+        if lang == '' and stream.default:
+            return stream
+        if not stream.language:
+            continue
+        langs.append(stream.language)
+        if (
+            not group_index or stream.group_index == group_index
+        ) and stream.language.lower() == lang.lower():
+            return stream
+    logger.warning(f'Found no stream with language: {lang}')
+    logger.warning(f'Available streams: {", ".join(langs)}')
+    return None
 
 
 def close_session_callback(session: str) -> None:

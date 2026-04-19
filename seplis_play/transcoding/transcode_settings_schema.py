@@ -6,10 +6,8 @@ from fastapi import Query
 from pydantic import BeforeValidator, StringConstraints, field_validator
 from pydantic.dataclasses import dataclass
 
-CODEC_OR_CONTAINER_PATTERN = r'^[a-z0-9][a-z0-9._-]*$'
 CodecOrContainerName = Annotated[
-    str,
-    StringConstraints(pattern=CODEC_OR_CONTAINER_PATTERN),
+    str, StringConstraints(pattern=r'^[a-z0-9][a-z0-9._-]*$')
 ]
 
 
@@ -46,23 +44,23 @@ class TranscodeSettings:
         Annotated[list[CodecOrContainerName], BeforeValidator(_split_query_list)],
         Query(default_factory=lambda: ['h264']),
     ]
+    supported_video_color_bit_depth: Annotated[int, Query(ge=8)] = 10
     source_index: int = 0
-    format: Literal['pipe', 'hls', 'hls.js'] = 'hls'
+    format: Literal['hls'] = 'hls'
     transcode_video_codec: Literal['h264', 'hevc', 'av1'] = 'h264'
     transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3'] = 'aac'
 
-    supported_video_color_bit_depth: Annotated[int, Query(ge=8)] = 10
     start_time: Annotated[Decimal, Query()] = Decimal(0)
     start_segment: int | None = None
     audio_lang: str | None = None
-    include_subtitles: bool = False
     max_audio_channels: int | None = None
     max_width: int | None = None
     max_video_bitrate: int | None = None
     client_can_switch_audio_track: bool = False
-    # Currently there is an issue with Firefox and hls not
-    # being able to play if start time isn't 0 with video copy
     force_transcode: bool = False
+    hls_include_all_subtitles: bool = False
+    hls_subtitle_lang: str | None = None
+    hls_subtitle_offset: Decimal | None = None
 
     @field_validator('supported_video_color_bit_depth', mode='before')
     @classmethod

@@ -5,13 +5,15 @@ import re
 from decimal import Decimal
 from urllib.parse import urlencode
 
+import iso639
 from aiofile import AIOFile, LineReader
 
 from seplis_play import logger
+from seplis_play.scanners.subtitles.subtitles import get_external_subtitles
 from seplis_play.schemas.source_metadata_schemas import (
     SourceMetadata,
-    SourceSubtitleStream,
 )
+from seplis_play.schemas.source_schemas import SourceStream
 from seplis_play.transcoding.tests.test_transcode_schema import TranscodeSettings
 
 from . import base_transcoder
@@ -40,12 +42,6 @@ class HlsTranscoder(base_transcoder.Transcoder):
             codec in self.HDR_CODECS for codec in settings.supported_video_codecs
         ):
             settings.supported_hdr_formats = []
-        if settings.format == 'hls.js':
-            # Find out if hls.js supports other than aac, e.g. eac3 doesn't work
-            settings.supported_audio_codecs = [
-                'aac',
-            ]
-            settings.transcode_audio_codec = 'aac'
         super().__init__(settings, metadata)
 
     def ffmpeg_extend_args(self) -> None:
@@ -144,44 +140,68 @@ class HlsTranscoder(base_transcoder.Transcoder):
         playlist.append('#EXT-X-ENDLIST')
         return '\n'.join(playlist)
 
-    def get_subtitle_streams(self) -> list[tuple[int, SourceSubtitleStream]]:
-        result = []
-        for i, stream in enumerate(self.metadata.get('streams', [])):
-            if stream.get('codec_type') != 'subtitle':
-                continue
-            if stream.get('codec_name') in ('dvd_subtitle', 'hdmv_pgs_subtitle'):
-                continue
-            if 'tags' not in stream:
-                continue
-            result.append((i, stream))
+    async def get_subtitle_streams(self) -> list[SourceStream]:
+        result: list[SourceStream] = self.source.subtitles.copy()
+        external_subs = await get_external_subtitles(self.metadata['format']['filename'])
+        result.extend(external_subs)
+        if (
+            not self.settings.hls_include_all_subtitles
+            and self.settings.hls_subtitle_lang
+        ):
+            selected = base_transcoder.stream_by_lang(
+                result, self.settings.hls_subtitle_lang
+            )
+            if selected is not None:
+                result = [stream for stream in result if stream.index == selected.index]
         return result
 
-    def generate_main_playlist(self) -> str:
-        settings_dict = self.settings.to_args_dict()
-        url_settings = urlencode(settings_dict)
-        subtitle_streams = (
-            self.get_subtitle_streams() if self.settings.include_subtitles else []
+    async def generate_subtitle_playlist(self) -> list[str]:
+        result: list[str] = []
+        subtitle_streams: list[SourceStream] = await self.get_subtitle_streams()
+        default_subtitle = base_transcoder.stream_by_lang(
+            subtitle_streams, self.settings.hls_subtitle_lang
         )
-        playlist = ['#EXTM3U']
-
-        for i, stream in subtitle_streams:
-            tags = stream.get('tags', {})
-            lang = tags.get('language') or tags.get('title') or 'und'
-            name = tags.get('title') or lang
-            lang_param = f'{lang}:{i}'
-            default = 'YES' if stream.get('disposition', {}).get('default') else 'NO'
-            subtitle_url = (
-                f'/hls/subtitle.m3u8?play_id={self.settings.play_id}'
-                f'&source_index={self.settings.source_index}&lang={lang_param}'
+        for stream in subtitle_streams:
+            lang_param = f'{stream.language}:{stream.group_index}'
+            selected = (
+                'YES'
+                if default_subtitle is not None and stream.index == default_subtitle.index
+                else 'NO'
             )
-            playlist.append(
+            subtitle_params: dict[str, str | int | Decimal] = {
+                'play_id': self.settings.play_id,
+                'source_index': self.settings.source_index,
+                'lang': lang_param,
+            }
+            if self.settings.hls_subtitle_offset:
+                subtitle_params['offset'] = self.settings.hls_subtitle_offset
+            subtitle_url = f'/hls/subtitle.m3u8?{urlencode(subtitle_params)}'
+            language_title = (
+                iso639.Lang(stream.language).name
+                if iso639.is_language(stream.language or '')
+                else stream.language
+            )
+            result.append(
                 f'#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",'
-                f'LANGUAGE="{lang}",NAME="{name}",DEFAULT={default},'
+                f'LANGUAGE="{stream.language}",NAME="{stream.title or language_title}",'
+                f'DEFAULT={selected},AUTOSELECT={selected},FORCED=NO,'
                 f'URI="{subtitle_url}"'
             )
+        return result
+
+    async def generate_main_playlist(self) -> str:
+        settings_dict = self.settings.to_args_dict()
+        url_settings = urlencode(settings_dict)
+
+        playlist = ['#EXTM3U']
+
+        subtitle_playlist = []
+        if self.settings.hls_include_all_subtitles or self.settings.hls_subtitle_lang:
+            subtitle_playlist = await self.generate_subtitle_playlist()
+            playlist.extend(subtitle_playlist)
 
         stream_inf = self.get_stream_info_string()
-        if subtitle_streams:
+        if subtitle_playlist:
             stream_inf += ',SUBTITLES="subs"'
         playlist.append(f'#EXT-X-STREAM-INF:{stream_inf}')
         playlist.append(f'/hls/media.m3u8?{url_settings}')
@@ -201,13 +221,10 @@ class HlsTranscoder(base_transcoder.Transcoder):
         video_bitrate = self.get_video_bitrate()
         info.append(f'BANDWIDTH={video_bitrate}')
         info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
-        width = self.settings.max_width or self.source.width
-        if width > self.source.width:
-            width = self.source.width
-        if width != self.source.width:
-            height = round(self.source.height * width / self.source.width)
-        else:
-            height = self.source.height
+        codecs = self.get_codecs_string()
+        if codecs:
+            info.append(f'CODECS="{",".join(codecs)}"')
+        width, height = self.get_output_resolution()
         info.append(f'RESOLUTION={width}x{height}')
         info.append(f'VIDEO-RANGE={self.get_video_range()}')
         return ','.join(info)
@@ -332,18 +349,22 @@ class HlsTranscoder(base_transcoder.Transcoder):
         return [c for c in codecs if c]
 
     def get_video_codec_string(self) -> str:
-        if not self.can_copy_video:
-            return ''
         if self.video_output_codec == 'h264':
-            return self.get_h264_codec_string(
-                self.video_stream.get('profile', ''),
-                self.video_stream.get('level', 0),
-            )
+            if self.can_copy_video:
+                return self.get_h264_codec_string(
+                    self.video_stream.get('profile', ''),
+                    self.video_stream.get('level', 0),
+                )
+            return 'avc1'
         if self.video_output_codec == 'hevc':
-            return self.get_hevc_codec_string(
-                self.video_stream.get('profile', ''),
-                self.video_stream.get('level', 0),
-            )
+            if self.can_copy_video:
+                return self.get_hevc_codec_string(
+                    self.video_stream.get('profile', ''),
+                    self.video_stream.get('level', 0),
+                )
+            return 'hvc1'
+        if self.video_output_codec == 'av1':
+            return 'av01'
         return ''
 
     def get_audio_codec_string(self) -> str:

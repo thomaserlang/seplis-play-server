@@ -1,3 +1,4 @@
+import asyncio
 from typing import cast
 from uuid import uuid4
 
@@ -97,7 +98,17 @@ def test_hls() -> None:
     HlsTranscoder(settings, metadata)
 
 
-def test_hls_main_playlist_does_not_include_subtitles_by_default() -> None:
+def test_hls_main_playlist_does_not_include_subtitles_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def noop_get_external_subtitles(filename: str) -> list:
+        return []
+
+    monkeypatch.setattr(
+        'seplis_play.transcoding.hls_transcoder.get_external_subtitles',
+        noop_get_external_subtitles,
+    )
+
     settings = TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
@@ -146,13 +157,23 @@ def test_hls_main_playlist_does_not_include_subtitles_by_default() -> None:
         'keyframes': ['0.000000', '6.000000'],
     }
 
-    playlist = HlsTranscoder(settings, metadata).generate_main_playlist()
+    playlist = asyncio.run(HlsTranscoder(settings, metadata).generate_main_playlist())
 
     assert 'TYPE=SUBTITLES' not in playlist
     assert 'SUBTITLES="subs"' not in playlist
 
 
-def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
+def test_hls_main_playlist_includes_subtitles_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def noop_get_external_subtitles(filename: str) -> list:
+        return []
+
+    monkeypatch.setattr(
+        'seplis_play.transcoding.hls_transcoder.get_external_subtitles',
+        noop_get_external_subtitles,
+    )
+
     settings = TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
@@ -163,7 +184,8 @@ def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
         transcode_video_codec='h264',
         transcode_audio_codec='aac',
         format='hls',
-        include_subtitles=True,
+        hls_include_all_subtitles=True,
+        hls_subtitle_lang='eng:0',
     )
     metadata: SourceMetadata = {
         'streams': [
@@ -191,6 +213,13 @@ def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
                 'tags': {'language': 'eng', 'title': 'English'},
                 'disposition': {'default': 1},
             },
+            {
+                'index': 3,
+                'codec_name': 'subrip',
+                'codec_type': 'subtitle',
+                'tags': {'language': 'spa', 'title': 'Spanish'},
+                'disposition': {'default': 0},
+            },
         ],
         'format': {
             'format_name': 'mp4',
@@ -202,11 +231,97 @@ def test_hls_main_playlist_includes_subtitles_when_enabled() -> None:
         'keyframes': ['0.000000', '6.000000'],
     }
 
-    playlist = HlsTranscoder(settings, metadata).generate_main_playlist()
+    playlist = asyncio.run(HlsTranscoder(settings, metadata).generate_main_playlist())
 
     assert 'TYPE=SUBTITLES' in playlist
     assert 'SUBTITLES="subs"' in playlist
-    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=eng:2' in playlist
+    assert (
+        'LANGUAGE="eng",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO' in playlist
+    )
+    assert 'LANGUAGE="spa",NAME="Spanish",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO' in playlist
+    assert 'FORCED=NO' in playlist
+    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=eng%3A0' in playlist
+    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=spa%3A1' in playlist
+    assert playlist.index('LANGUAGE="eng",NAME="English"') < playlist.index(
+        'LANGUAGE="spa",NAME="Spanish"'
+    )
+
+
+def test_hls_main_playlist_only_includes_selected_subtitle_when_not_including_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def noop_get_external_subtitles(filename: str) -> list:
+        return []
+
+    monkeypatch.setattr(
+        'seplis_play.transcoding.hls_transcoder.get_external_subtitles',
+        noop_get_external_subtitles,
+    )
+
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+        hls_subtitle_lang='eng:0',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+            {
+                'index': 2,
+                'codec_name': 'subrip',
+                'codec_type': 'subtitle',
+                'tags': {'language': 'eng', 'title': 'English'},
+                'disposition': {'default': 1},
+            },
+            {
+                'index': 3,
+                'codec_name': 'subrip',
+                'codec_type': 'subtitle',
+                'tags': {'language': 'spa', 'title': 'Spanish'},
+                'disposition': {'default': 0},
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    playlist = asyncio.run(HlsTranscoder(settings, metadata).generate_main_playlist())
+
+    assert (
+        'LANGUAGE="eng",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO' in playlist
+    )
+    assert 'LANGUAGE="spa",NAME="Spanish"' not in playlist
+    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=eng%3A0' in playlist
+    assert '/hls/subtitle.m3u8?play_id=a&source_index=0&lang=spa%3A1' not in playlist
 
 
 def test_qsv_tonemap_filter_without_resize_has_valid_scale_expression(
@@ -320,6 +435,63 @@ def test_hls_h264_only_does_not_expose_hdr() -> None:
     assert transcoder.can_copy_video is True
     assert transcoder.get_video_range() == 'SDR'
     assert 'VIDEO-RANGE=SDR' in transcoder.get_stream_info_string()
+
+
+def test_hls_stream_info_uses_shared_output_resolution_and_codecs() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        max_width=1280,
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'hevc',
+                'profile': 'Main 10',
+                'level': 120,
+                'codec_type': 'video',
+                'codec_tag_string': 'hvc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p10le',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert transcoder.can_copy_video is False
+    assert transcoder.get_output_width() == 1280
+    assert transcoder.get_output_resolution() == (1280, 720)
+    assert (
+        transcoder.get_stream_info_string()
+        == 'BANDWIDTH=5000000,AVERAGE-BANDWIDTH=5000000,'
+        'CODECS="avc1,mp4a.40.2",RESOLUTION=1280x720,VIDEO-RANGE=SDR'
+    )
 
 
 def test_hls_h264_source_is_treated_as_sdr_even_if_hevc_is_supported() -> None:

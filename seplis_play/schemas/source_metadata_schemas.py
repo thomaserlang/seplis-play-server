@@ -3,17 +3,17 @@ from typing import Literal, NotRequired, TypedDict
 type SourceNumber = str | int | float
 
 
-class SourceStreamTags(TypedDict, total=False):
+class SourceMetadataStreamTags(TypedDict, total=False):
     language: str
     title: str
 
 
-class SourceDisposition(TypedDict, total=False):
+class SourceMetadataDisposition(TypedDict, total=False):
     default: int
     forced: int
 
 
-class SourceSideData(TypedDict, total=False):
+class SourceMetadataSideData(TypedDict, total=False):
     side_data_type: str
     dv_profile: int
     rpu_present_flag: int | bool
@@ -21,14 +21,14 @@ class SourceSideData(TypedDict, total=False):
     dv_bl_signal_compatibility_id: int
 
 
-class SourceBaseStream(TypedDict):
+class SourceMetadataBaseStream(TypedDict):
     index: int
     codec_name: str
-    disposition: NotRequired[SourceDisposition]
-    tags: NotRequired[SourceStreamTags]
+    disposition: NotRequired[SourceMetadataDisposition]
+    tags: NotRequired[SourceMetadataStreamTags]
 
 
-class SourceVideoStream(SourceBaseStream):
+class SourceMetadataVideoStream(SourceMetadataBaseStream):
     codec_type: Literal['video']
     width: int
     height: int
@@ -41,10 +41,10 @@ class SourceVideoStream(SourceBaseStream):
     color_space: NotRequired[str]
     r_frame_rate: NotRequired[str]
     has_b_frames: NotRequired[int]
-    side_data_list: NotRequired[list[SourceSideData]]
+    side_data_list: NotRequired[list[SourceMetadataSideData]]
 
 
-class SourceAudioStream(SourceBaseStream):
+class SourceMetadataAudioStream(SourceMetadataBaseStream):
     codec_type: Literal['audio']
     channels: int
     sample_rate: NotRequired[str | int]
@@ -53,14 +53,16 @@ class SourceAudioStream(SourceBaseStream):
     group_index: NotRequired[int]
 
 
-class SourceSubtitleStream(SourceBaseStream):
+class SourceMetadataSubtitleStream(SourceMetadataBaseStream):
     codec_type: Literal['subtitle']
 
 
-type SourceStream = SourceVideoStream | SourceAudioStream | SourceSubtitleStream
+type SourceMetadataStream = (
+    SourceMetadataVideoStream | SourceMetadataAudioStream | SourceMetadataSubtitleStream
+)
 
 
-class SourceFormat(TypedDict):
+class SourceMetadataFormat(TypedDict):
     filename: str
     format_name: str
     duration: SourceNumber
@@ -69,6 +71,6 @@ class SourceFormat(TypedDict):
 
 
 class SourceMetadata(TypedDict):
-    streams: list[SourceStream]
-    format: SourceFormat
+    streams: list[SourceMetadataStream]
+    format: SourceMetadataFormat
     keyframes: NotRequired[list[str] | None]

@@ -2,7 +2,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from seplis_play.schemas.source_metadata_schemas import SourceMetadata, SourceStream
+from seplis_play.schemas.source_metadata_schemas import (
+    SourceMetadata,
+    SourceMetadataStream,
+)
 
 
 class BrowserMediaTypes(BaseModel):
@@ -11,8 +14,8 @@ class BrowserMediaTypes(BaseModel):
 
 def get_browser_media_types(
     metadata: SourceMetadata,
-    video_stream: SourceStream | None,
-    audio_stream: SourceStream | None,
+    video_stream: SourceMetadataStream | None,
+    audio_stream: SourceMetadataStream | None,
 ) -> BrowserMediaTypes:
     video_mime, audio_mime = get_container_mime_types(metadata)
     video_codec = get_video_codec_string(video_stream)
@@ -69,7 +72,7 @@ def get_container_name(metadata: SourceMetadata) -> str | None:
     return None
 
 
-def get_video_codec_string(stream: SourceStream | None) -> str | None:
+def get_video_codec_string(stream: SourceMetadataStream | None) -> str | None:
     if not stream:
         return None
 
@@ -101,16 +104,12 @@ def get_video_codec_string(stream: SourceStream | None) -> str | None:
         return 'av01'
     if codec == 'vp9':
         return 'vp09'
-    if codec == 'vp8':
-        return 'vp8'
-    if codec == 'theora':
-        return 'theora'
 
     return codec or None
 
 
 def get_audio_codec_string(
-    stream: SourceStream | None, container_mime: str | None
+    stream: SourceMetadataStream | None, container_mime: str | None
 ) -> str | None:
     if not stream:
         return None

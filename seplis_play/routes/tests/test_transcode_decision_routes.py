@@ -120,6 +120,9 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
     )
 
     assert response.can_direct_play is True
+    assert response.hls_url.startswith('/hls/media.m3u8?')
+    assert f'session={session}' in response.hls_url
+    assert 'hls_include_all_subtitles=False' in response.hls_url
     assert response.transcode_decision
     assert response.transcode_decision.model_dump() == {
         'session': session,

@@ -129,6 +129,5 @@ dmypy.json
 .pyre/
 
 seplis_play.yaml
-docker-compose.yml
 .devcontainer/.env
 seplis_play.db

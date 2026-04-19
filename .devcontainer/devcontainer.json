@@ -1,16 +1,26 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
-	"name": "seplis-play-server",
+	"name": "seplis-play",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
 	"workspaceFolder": "/app",
+	"remoteUser": "seplis",
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
 	"customizations": {
 		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/app/.venv/bin/python",
+				"python.testing.pytestEnabled": true,
+				"python.testing.pytestArgs": [
+					"seplis_play"
+				],
+				"python.terminal.activateEnvironment": true,
+				"ruff.nativeServer": "on"
+			},
 			"extensions": [
 				"charliermarsh.ruff",
 				"ms-python.python",
@@ -19,7 +29,7 @@
 		}
 	},
 
-	"postCreateCommand": "uv sync --dev",
+	"postCreateCommand": "uv sync --dev --frozen",
 
 	"mounts": [
 		"source=/var/home/te/videos,target=/videos,type=bind,consistency=cached"

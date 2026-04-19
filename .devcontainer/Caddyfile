@@ -1,8 +1,0 @@
-:80 {
-	reverse_proxy app:8003
-}
-
-:443 {
-	tls internal
-	reverse_proxy app:8003
-}

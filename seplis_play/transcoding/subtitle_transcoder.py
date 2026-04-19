@@ -7,8 +7,9 @@ from aiofile import async_open
 from seplis_play import config, database, logger
 from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
+from seplis_play.schemas.source_schemas import source_streams_from_metadata
 
-from .base_transcoder import stream_index_by_lang, to_subprocess_arguments
+from .base_transcoder import stream_by_lang, to_subprocess_arguments
 
 
 async def get_subtitle_file(
@@ -16,7 +17,9 @@ async def get_subtitle_file(
 ) -> str | None:
     if not lang:
         return None
-    sub_index = stream_index_by_lang(metadata, 'subtitle', lang)
+    sub_index = stream_by_lang(
+        source_streams_from_metadata(metadata, 'subtitle'), lang
+    )
     if not sub_index:
         return None
     args = [

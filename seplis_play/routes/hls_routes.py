@@ -24,7 +24,7 @@ async def get_main_playlist_route(
 ) -> Response:
     transcoder = HlsTranscoder(settings=settings, metadata=metadata)
     return Response(
-        content=transcoder.generate_main_playlist(),
+        content=await transcoder.generate_main_playlist(),
         media_type='application/x-mpegURL',
     )
 

@@ -4,8 +4,8 @@ from typing import Any, cast
 from pytest import MonkeyPatch
 
 import seplis_play.routes.sources_routes as sources_routes
-from seplis_play.routes.sources_routes import resolution_text
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
+from seplis_play.schemas.source_schemas import resolution_text
 from seplis_play.testbase import run_file
 
 
@@ -18,11 +18,11 @@ def test_resolution_text() -> None:
 
 
 def test_get_sources_route_exposes_media_type(monkeypatch: MonkeyPatch) -> None:
-    async def noop_fill_external_subtitles(filename: str, subtitles: list) -> None:
-        return None
+    async def noop_get_external_subtitles(filename: str) -> list:
+        return []
 
     monkeypatch.setattr(
-        sources_routes, 'fill_external_subtitles', noop_fill_external_subtitles
+        sources_routes, 'get_external_subtitles', noop_get_external_subtitles
     )
 
     sources: list[SourceMetadata] = [
@@ -64,11 +64,11 @@ def test_get_sources_route_exposes_media_type(monkeypatch: MonkeyPatch) -> None:
 
 
 def test_get_sources_route_exposes_audio_channels(monkeypatch: MonkeyPatch) -> None:
-    async def noop_fill_external_subtitles(filename: str, subtitles: list) -> None:
-        return None
+    async def noop_get_external_subtitles(filename: str) -> list:
+        return []
 
     monkeypatch.setattr(
-        sources_routes, 'fill_external_subtitles', noop_fill_external_subtitles
+        sources_routes, 'get_external_subtitles', noop_get_external_subtitles
     )
 
     sources: list[SourceMetadata] = [
