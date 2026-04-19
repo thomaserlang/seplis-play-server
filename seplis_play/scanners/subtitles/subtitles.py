@@ -29,6 +29,7 @@ async def get_external_subtitles(filename: str) -> list[SourceStream]:
                 title=title,
                 language=r.language,
                 index=r.id + 1000,
+                group_index=r.id + 1000,
                 codec=r.type,
                 default=r.default,
                 forced=r.forced,
