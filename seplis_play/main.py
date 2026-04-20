@@ -3,8 +3,8 @@ from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.datastructures import Headers
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from seplis_play.config import config
@@ -61,5 +61,5 @@ def never_is_not_modified(
 
 
 # The media.m3u8 gets updated too fast and the browser gets an old version
-setattr(StaticFiles, 'is_not_modified', cast(Any, never_is_not_modified))
+StaticFiles.is_not_modified = cast(Any, never_is_not_modified)
 app.mount('/files', StaticFiles(directory=config.transcode_folder), name='files')
