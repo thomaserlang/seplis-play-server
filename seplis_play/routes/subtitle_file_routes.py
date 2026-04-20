@@ -20,14 +20,14 @@ async def download_subtitle_route(
     offset: int | float = 0,
     output_format: Literal['webvtt', 'ass'] = 'webvtt',
 ) -> Response:
-    lang, group_index = lang.split(':')
+    _, group_index = lang.split(':')
     if not group_index.isdigit():
         raise HTTPException(400, 'Invalid group index')
     group_index = int(group_index)
     sub: str | None
     if group_index < 1000:
         sub = await get_subtitle_file(
-            metadata=metadata, lang=lang, offset=offset, output_format=output_format
+            metadata=metadata, langKey=lang, offset=offset, output_format=output_format
         )
     else:
         sub = await get_subtitle_file_from_external(
@@ -37,4 +37,6 @@ async def download_subtitle_route(
         )
     if not sub:
         raise HTTPException(500, 'Unable retrive subtitle file')
-    return Response(content=sub, media_type='text/vtt' if output_format == 'webvtt' else 'text/x-ass')
+    return Response(
+        content=sub, media_type='text/vtt' if output_format == 'webvtt' else 'text/x-ass'
+    )

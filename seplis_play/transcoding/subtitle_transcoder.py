@@ -13,12 +13,12 @@ from .base_transcoder import stream_by_lang, to_subprocess_arguments
 
 
 async def get_subtitle_file(
-    metadata: SourceMetadata, lang: str, offset: int | float, output_format: str
+    metadata: SourceMetadata, langKey: str, offset: int | float, output_format: str
 ) -> str | None:
-    if not lang:
+    if not langKey:
         return None
     sub_index = stream_by_lang(
-        source_streams_from_metadata(metadata, 'subtitle'), lang
+        source_streams_from_metadata(metadata, 'subtitle'), langKey
     )
     if not sub_index:
         return None
