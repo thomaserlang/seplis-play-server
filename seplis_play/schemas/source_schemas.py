@@ -8,8 +8,8 @@ from seplis_play.schemas.source_metadata_schemas import SourceMetadata, SourceNu
 
 @dataclass
 class SourceStream:
-    title: str | None
-    language: str | None
+    title: str
+    language: str
     index: int
     codec: str | None
     channels: int | None = None
@@ -102,8 +102,8 @@ def source_streams_from_metadata(
             continue
         result.append(
             SourceStream(
-                title=title,
-                language=lang,
+                title=title or '',
+                language=lang or 'und',
                 index=stream['index'],
                 codec=stream.get('codec_name'),
                 channels=stream.get('channels'),
