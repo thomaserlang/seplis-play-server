@@ -920,7 +920,8 @@ def stream_by_lang(streams: list[SourceStream], lang: str | None) -> SourceStrea
         if not group_index.isdigit():
             logger.warning(f'Invalid group index: {group_index}')
             group_index = None
-        group_index = int(group_index)
+
+        group_index = int(group_index or 0)
         stream = next(
             (stream for stream in streams if stream.group_index == group_index), None
         )
