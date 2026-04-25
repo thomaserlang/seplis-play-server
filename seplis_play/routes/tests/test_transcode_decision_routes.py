@@ -5,8 +5,10 @@ from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.transcoding.base_transcoder import Transcoder, sessions
 from seplis_play.transcoding.transcode_decision_schema import (
     BlockerCode,
+    DecisionScope,
     PlaybackMethod,
     StreamAction,
+    StreamKind,
 )
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
@@ -105,8 +107,29 @@ def test_transcoder_collects_compact_transcode_blockers() -> None:
     ]
     assert direct_play_blocker_codes == [
         BlockerCode.UNSUPPORTED_CODEC,
-        BlockerCode.UNSUPPORTED_CODEC,
     ]
+
+
+def test_direct_play_reports_one_blocker_for_audio_codec_mismatch() -> None:
+    sessions.clear()
+    settings = TranscodeSettings(
+        play_id='play-id',
+        session='c' * 32,
+        supported_hdr_formats=[],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['opus'],
+    )
+
+    transcoder = Transcoder(settings=settings, metadata=DIRECT_PLAY_METADATA)
+
+    assert transcoder.transcode_decision.direct_play.supported is False
+    assert len(transcoder.transcode_decision.direct_play.blockers) == 1
+    blocker = transcoder.transcode_decision.direct_play.blockers[0]
+    assert blocker.code is BlockerCode.UNSUPPORTED_CODEC
+    assert blocker.scope is DecisionScope.AUDIO
+    assert blocker.stream is StreamKind.AUDIO
+    assert blocker.source_codec == 'aac'
 
 
 def test_request_media_exposes_transcode_decision_by_session() -> None:
@@ -136,6 +159,7 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
     assert response.model_dump(mode='json')['transcode_decision'] == {
         'session': session,
         'method': 'direct_play',
+        'target_format': 'hls',
         'required': False,
         'direct_play': {
             'supported': True,

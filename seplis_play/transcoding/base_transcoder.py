@@ -26,6 +26,7 @@ from seplis_play.transcoding.transcode_decision_schema import (
     DecisionScope,
     DirectPlayDecision,
     LimitKind,
+    OutputFormat,
     PlaybackMethod,
     StreamAction,
     StreamDecision,
@@ -337,7 +338,6 @@ class Transcoder:
                         scope=DecisionScope.VIDEO,
                         stream=StreamKind.VIDEO,
                         source_codec=self.video_input_codec,
-                        supported=tuple(self.settings.supported_video_codecs),
                     )
                 ],
             )
@@ -374,7 +374,6 @@ class Transcoder:
                         scope=DecisionScope.VIDEO,
                         stream=StreamKind.VIDEO,
                         source_hdr=self.video_color.range_type,
-                        supported=tuple(self.settings.supported_hdr_formats),
                     )
                 ],
             )
@@ -448,29 +447,13 @@ class Transcoder:
         if not video_copy.supported:
             return DecisionCheck(
                 supported=False,
-                blockers=[
-                    DecisionBlocker(
-                        code=BlockerCode.UNSUPPORTED_CODEC,
-                        scope=DecisionScope.PLAYBACK,
-                        stream=StreamKind.VIDEO,
-                        source_codec=self.video_input_codec,
-                    ),
-                    *video_copy.blockers,
-                ],
+                blockers=video_copy.blockers,
             )
 
         if not self.audio_copy_decision.supported:
             return DecisionCheck(
                 supported=False,
-                blockers=[
-                    DecisionBlocker(
-                        code=BlockerCode.UNSUPPORTED_CODEC,
-                        scope=DecisionScope.PLAYBACK,
-                        stream=StreamKind.AUDIO,
-                        source_codec=self.audio_input_codec,
-                    ),
-                    *self.audio_copy_decision.blockers,
-                ],
+                blockers=self.audio_copy_decision.blockers,
             )
 
         if not any(
@@ -484,7 +467,6 @@ class Transcoder:
                         code=BlockerCode.UNSUPPORTED_CONTAINER,
                         scope=DecisionScope.CONTAINER,
                         source_container=self.metadata['format']['format_name'],
-                        supported=tuple(self.settings.supported_video_containers),
                     )
                 ],
             )
@@ -564,6 +546,7 @@ class Transcoder:
         return TranscodeDecision(
             session=self.settings.session,
             method=method,
+            target_format=OutputFormat(self.settings.format),
             required=needs_transcode,
             video=StreamDecision(
                 kind=StreamKind.VIDEO,
@@ -809,7 +792,6 @@ class Transcoder:
                         scope=DecisionScope.AUDIO,
                         stream=StreamKind.AUDIO,
                         source_codec=stream['codec_name'],
-                        supported=tuple(self.settings.supported_audio_codecs),
                     )
                 ],
             )
@@ -1095,6 +1077,7 @@ def summarize_transcode_decision(decision: TranscodeDecision) -> str:
     )
     return (
         f'method={decision.method} | '
+        f'target_format={decision.target_format} | '
         f'video={decision.video.action} '
         f'({decision.video.source_codec} -> {decision.video.target_codec}; '
         f'{", ".join(format_blocker(blocker) for blocker in decision.video.blockers)}) | '

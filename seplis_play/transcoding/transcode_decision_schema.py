@@ -10,6 +10,10 @@ class PlaybackMethod(StrEnum):
     TRANSCODE = 'transcode'
 
 
+class OutputFormat(StrEnum):
+    HLS = 'hls'
+
+
 class DecisionScope(StrEnum):
     PLAYBACK = 'playback'
     VIDEO = 'video'
@@ -56,7 +60,6 @@ class DecisionBlocker:
     target_codec: str | None = None
     source_container: str | None = None
     source_hdr: str | None = None
-    supported: tuple[str, ...] = ()
     limit_kind: LimitKind | None = None
     limit: int | None = None
     actual: int | None = None
@@ -86,6 +89,7 @@ class StreamDecision:
 class TranscodeDecision:
     session: str
     method: PlaybackMethod
+    target_format: OutputFormat
     required: bool
     direct_play: DirectPlayDecision
     video: StreamDecision
@@ -100,7 +104,6 @@ def format_blocker(blocker: DecisionBlocker) -> str:
         ('target_codec', blocker.target_codec),
         ('source_container', blocker.source_container),
         ('source_hdr', blocker.source_hdr),
-        ('supported', ','.join(blocker.supported) if blocker.supported else None),
         ('limit_kind', blocker.limit_kind.value if blocker.limit_kind else None),
         ('limit', blocker.limit),
         ('actual', blocker.actual),
