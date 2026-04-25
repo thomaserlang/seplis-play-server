@@ -3,6 +3,11 @@ import asyncio
 from seplis_play.routes.request_media_routes import request_media_route
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.transcoding.base_transcoder import Transcoder, sessions
+from seplis_play.transcoding.transcode_decision_schema import (
+    BlockerCode,
+    PlaybackMethod,
+    StreamAction,
+)
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 TRANSCODE_METADATA: SourceMetadata = {
@@ -71,7 +76,7 @@ DIRECT_PLAY_METADATA: SourceMetadata = {
 }
 
 
-def test_transcoder_collects_human_readable_transcode_reasons() -> None:
+def test_transcoder_collects_compact_transcode_blockers() -> None:
     sessions.clear()
     settings = TranscodeSettings(
         play_id='play-id',
@@ -84,19 +89,23 @@ def test_transcoder_collects_human_readable_transcode_reasons() -> None:
 
     transcoder = Transcoder(settings=settings, metadata=TRANSCODE_METADATA)
 
-    assert transcoder.transcode_decision.video_transcode_required is True
-    assert transcoder.transcode_decision.audio_transcode_required is True
-    assert transcoder.transcode_decision.transcode_required is True
-    assert transcoder.transcode_decision.video_copy.reasons == [
-        'Unsupported video codec (hevc; client: h264)'
+    assert transcoder.transcode_decision.method is PlaybackMethod.TRANSCODE
+    assert transcoder.transcode_decision.direct_play.supported is False
+    assert transcoder.transcode_decision.required is True
+    assert transcoder.transcode_decision.video.action is StreamAction.TRANSCODE
+    assert transcoder.transcode_decision.audio.action is StreamAction.TRANSCODE
+    assert transcoder.transcode_decision.video.blockers[0].code is (
+        BlockerCode.UNSUPPORTED_CODEC
+    )
+    assert transcoder.transcode_decision.audio.blockers[0].code is (
+        BlockerCode.VIDEO_TRANSCODE_REQUIRES_AUDIO_TRANSCODE
+    )
+    direct_play_blocker_codes = [
+        blocker.code for blocker in transcoder.transcode_decision.direct_play.blockers
     ]
-    assert transcoder.transcode_decision.audio_copy.reasons == [
-        'Audio copy disabled during video transcode '
-        '(video: hevc -> h264, audio: aac -> aac)'
-    ]
-    assert transcoder.transcode_decision.direct_play.reasons == [
-        'Direct play: unsupported video codec (hevc)',
-        'Unsupported video codec (hevc; client: h264)',
+    assert direct_play_blocker_codes == [
+        BlockerCode.UNSUPPORTED_CODEC,
+        BlockerCode.UNSUPPORTED_CODEC,
     ]
 
 
@@ -124,21 +133,26 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
     assert f'session={session}' in response.hls_url
     assert 'hls_include_all_subtitles=False' in response.hls_url
     assert response.transcode_decision
-    assert response.transcode_decision.model_dump() == {
+    assert response.model_dump(mode='json')['transcode_decision'] == {
         'session': session,
-        'video_copy': {
-            'supported': True,
-            'reasons': ['Video copy: h264'],
-        },
-        'audio_copy': {
-            'supported': True,
-            'reasons': ['Audio copy: aac'],
-        },
+        'method': 'direct_play',
+        'required': False,
         'direct_play': {
             'supported': True,
-            'reasons': ['Direct play (container: mp4, video: h264, audio: aac)'],
+            'blockers': [],
         },
-        'video_transcode_required': False,
-        'audio_transcode_required': False,
-        'transcode_required': False,
+        'video': {
+            'kind': 'video',
+            'action': 'copy',
+            'source_codec': 'h264',
+            'target_codec': 'h264',
+            'blockers': [],
+        },
+        'audio': {
+            'kind': 'audio',
+            'action': 'copy',
+            'source_codec': 'aac',
+            'target_codec': 'aac',
+            'blockers': [],
+        },
     }

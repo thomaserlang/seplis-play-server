@@ -8,7 +8,8 @@ from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 from ..dependencies import get_metadata
 from ..schemas.source_metadata_schemas import SourceMetadata
-from ..transcoding.base_transcoder import TranscodeDecision, Transcoder
+from ..transcoding.base_transcoder import Transcoder
+from ..transcoding.transcode_decision_schema import TranscodeDecision
 
 router = APIRouter()
 
