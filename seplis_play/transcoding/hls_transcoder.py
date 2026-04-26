@@ -398,7 +398,7 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
 
     def get_hevc_codec_string(self, profile: str, level: int) -> str:
         r = 'hvc1'
-        profile = profile.lower().strip(' ')
+        profile = profile.lower().replace(' ', '')
         if profile == 'main10':
             r += '.2.4'
         else:

@@ -545,7 +545,7 @@ def test_hls_h264_source_is_treated_as_sdr_even_if_hevc_is_supported() -> None:
     assert 'VIDEO-RANGE=SDR' in transcoder.get_stream_info_string()
 
 
-def test_hls_hevc_support_keeps_hdr_available() -> None:
+def test_hls_hevc_hdr10_stream_info_uses_main10_and_pq() -> None:
     settings = TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
@@ -562,6 +562,8 @@ def test_hls_hevc_support_keeps_hdr_available() -> None:
             {
                 'index': 0,
                 'codec_name': 'hevc',
+                'profile': 'Main 10',
+                'level': 120,
                 'codec_type': 'video',
                 'codec_tag_string': 'hvc1',
                 'width': 1920,
@@ -594,7 +596,11 @@ def test_hls_hevc_support_keeps_hdr_available() -> None:
     assert transcoder.settings.supported_hdr_formats == ['hdr10']
     assert transcoder.can_copy_video is True
     assert transcoder.get_video_range() == 'PQ'
-    assert 'VIDEO-RANGE=PQ' in transcoder.get_stream_info_string()
+    assert (
+        transcoder.get_stream_info_string()
+        == 'BANDWIDTH=2500000,AVERAGE-BANDWIDTH=2500000,'
+        'CODECS="hvc1.2.4.L120.B0,mp4a.40.2",RESOLUTION=1920x1080,VIDEO-RANGE=PQ'
+    )
 
 
 if __name__ == '__main__':
