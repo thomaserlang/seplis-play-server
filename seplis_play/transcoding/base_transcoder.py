@@ -237,10 +237,12 @@ class BaseTranscoder:
             )
 
     def set_video(self) -> None:
-        codec = codecs_to_library.get(self.video_output_codec, self.video_output_codec)
+        codec_lib = codecs_to_library.get(
+            self.video_output_codec, self.video_output_codec
+        )
 
         if self.can_copy_video:
-            codec = 'copy'
+            codec_lib = 'copy'
             if self.settings.start_time > 0:
                 i = self.find_ffmpeg_arg_index('-ss')
                 if not i:
@@ -260,19 +262,21 @@ class BaseTranscoder:
             )
         else:
             if config.ffmpeg_hwaccel_enabled:
-                codec = f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
+                codec_lib = (
+                    f'{self.settings.transcode_video_codec}_{config.ffmpeg_hwaccel}'
+                )
             if self.settings.start_time > 0:
                 t = self.settings.start_time
                 h, m, s = int(t // 3600), int((t % 3600) // 60), float(t % 60)
                 ts = f'{h:02d}:{m:02d}:{s:06.3f}'
                 self.ffmpeg_args.append({'-output_ts_offset': ts})
 
-        self.video_output_codec_lib = codec
+        self.video_output_codec_lib = codec_lib
         self.ffmpeg_args.extend(
             [
                 {'-map': '0:v:0'},
                 {'-map': '-0:s'},
-                {'-c:v': codec},
+                {'-c:v': codec_lib},
             ]
         )
 
@@ -287,7 +291,7 @@ class BaseTranscoder:
             else:
                 self.ffmpeg_args.append({'-tag:v': 'hvc1'})
 
-        if codec == 'copy':
+        if codec_lib == 'copy':
             return
 
         width = self.get_output_width()
@@ -303,7 +307,7 @@ class BaseTranscoder:
         vf = self.get_video_filter(width)
         if vf:
             self.ffmpeg_args.append({'-vf': ','.join(vf)})
-        self.ffmpeg_args.extend(self.get_quality_params(width, codec))
+        self.ffmpeg_args.extend(self.get_quality_params(width, codec_lib))
 
     def get_output_width(self) -> int:
         width = self.settings.max_width or self.video_stream['width']
