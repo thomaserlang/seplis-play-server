@@ -23,6 +23,16 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
     MEDIA_NAME: str = 'media.m3u8'
     CODECES = ('h264', 'hevc', 'av1')
     HDR_CODECS = ('hevc', 'av1')
+    HEVC_MAIN_TIER_MAX_BITRATES = {
+        120: 12_000_000,
+        123: 20_000_000,
+        150: 25_000_000,
+        153: 40_000_000,
+        156: 60_000_000,
+        180: 60_000_000,
+        183: 120_000_000,
+        186: 240_000_000,
+    }
 
     def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         if settings.transcode_video_codec not in self.CODECES:
@@ -219,15 +229,28 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
     def get_stream_info_string(self) -> str:
         info = []
         video_bitrate = self.get_video_bitrate()
-        info.append(f'BANDWIDTH={video_bitrate}')
         info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
+        info.append(f'BANDWIDTH={video_bitrate}')
+        info.append(f'VIDEO-RANGE={self.get_video_range()}')
         codecs = self.get_codecs_string()
         if codecs:
             info.append(f'CODECS="{",".join(codecs)}"')
         width, height = self.get_output_resolution()
         info.append(f'RESOLUTION={width}x{height}')
-        info.append(f'VIDEO-RANGE={self.get_video_range()}')
+        frame_rate = self.get_frame_rate()
+        if frame_rate:
+            info.append(f'FRAME-RATE={frame_rate}')
         return ','.join(info)
+
+    def get_frame_rate(self) -> str:
+        frame_rate_value = self.video_stream.get('r_frame_rate')
+        if not frame_rate_value:
+            return ''
+        numerator, denominator = frame_rate_value.split('/')
+        if denominator == '0':
+            return ''
+        frame_rate = Decimal(numerator) / Decimal(denominator)
+        return f'{frame_rate:.3f}'
 
     def get_segments(self) -> list[Decimal]:
         if self.can_copy_video:
@@ -361,6 +384,8 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
                 return self.get_hevc_codec_string(
                     self.video_stream.get('profile', ''),
                     self.video_stream.get('level', 0),
+                    self.video_stream.get('tier', ''),
+                    self.source.bitrate,
                 )
             return 'hvc1'
         if self.video_output_codec == 'av1':
@@ -396,15 +421,28 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         r += f'{level:02X}'
         return r
 
-    def get_hevc_codec_string(self, profile: str, level: int) -> str:
+    def get_hevc_codec_string(
+        self, profile: str, level: int, tier: str = '', bitrate: int = 0
+    ) -> str:
         r = 'hvc1'
-        profile = profile.lower().replace(' ', '')
-        if profile == 'main10':
+        normalized_profile = profile.lower().replace(' ', '')
+        if 'main10' in normalized_profile:
             r += '.2.4'
         else:
             r += '.1.4'
-        r += f'.L{level}.B0'
+        tier_prefix = (
+            'H' if self.is_hevc_high_tier(profile, level, tier, bitrate) else 'L'
+        )
+        r += f'.{tier_prefix}{level}.B0'
         return r
+
+    def is_hevc_high_tier(
+        self, profile: str, level: int, tier: str = '', bitrate: int = 0
+    ) -> bool:
+        if tier.lower() == 'high' or 'high' in profile.lower():
+            return True
+        main_tier_max_bitrate = self.HEVC_MAIN_TIER_MAX_BITRATES.get(level)
+        return bool(main_tier_max_bitrate and bitrate > main_tier_max_bitrate)
 
     def get_aac_codec_string(self, profile: str) -> str:
         r = 'mp4a'

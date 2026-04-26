@@ -35,6 +35,7 @@ class SourceMetadataVideoStream(SourceMetadataBaseStream):
     pix_fmt: str
     profile: NotRequired[str]
     level: NotRequired[int]
+    tier: NotRequired[str]
     codec_tag_string: NotRequired[str]
     color_transfer: NotRequired[str]
     color_primaries: NotRequired[str]

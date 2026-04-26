@@ -489,8 +489,8 @@ def test_hls_stream_info_uses_shared_output_resolution_and_codecs() -> None:
     assert transcoder.get_output_resolution() == (1280, 720)
     assert (
         transcoder.get_stream_info_string()
-        == 'BANDWIDTH=5000000,AVERAGE-BANDWIDTH=5000000,'
-        'CODECS="avc1,mp4a.40.2",RESOLUTION=1280x720,VIDEO-RANGE=SDR'
+        == 'AVERAGE-BANDWIDTH=5000000,BANDWIDTH=5000000,VIDEO-RANGE=SDR,'
+        'CODECS="avc1,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=23.976'
     )
 
 
@@ -545,7 +545,7 @@ def test_hls_h264_source_is_treated_as_sdr_even_if_hevc_is_supported() -> None:
     assert 'VIDEO-RANGE=SDR' in transcoder.get_stream_info_string()
 
 
-def test_hls_hevc_hdr10_stream_info_uses_main10_and_pq() -> None:
+def test_hls_hevc_hdr10_stream_info_uses_main10_tier_and_pq() -> None:
     settings = TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
@@ -563,11 +563,12 @@ def test_hls_hevc_hdr10_stream_info_uses_main10_and_pq() -> None:
                 'index': 0,
                 'codec_name': 'hevc',
                 'profile': 'Main 10',
-                'level': 120,
+                'level': 150,
+                'tier': 'High',
                 'codec_type': 'video',
                 'codec_tag_string': 'hvc1',
-                'width': 1920,
-                'height': 1080,
+                'width': 3840,
+                'height': 2160,
                 'pix_fmt': 'yuv420p10le',
                 'color_transfer': 'smpte2084',
                 'color_primaries': 'bt2020',
@@ -598,8 +599,62 @@ def test_hls_hevc_hdr10_stream_info_uses_main10_and_pq() -> None:
     assert transcoder.get_video_range() == 'PQ'
     assert (
         transcoder.get_stream_info_string()
-        == 'BANDWIDTH=2500000,AVERAGE-BANDWIDTH=2500000,'
-        'CODECS="hvc1.2.4.L120.B0,mp4a.40.2",RESOLUTION=1920x1080,VIDEO-RANGE=PQ'
+        == 'AVERAGE-BANDWIDTH=2500000,BANDWIDTH=2500000,VIDEO-RANGE=PQ,'
+        'CODECS="hvc1.2.4.H150.B0,mp4a.40.2",RESOLUTION=3840x2160,'
+        'FRAME-RATE=23.976'
+    )
+
+
+def test_hls_hevc_stream_info_infers_high_tier_from_bitrate() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=['hdr10'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264', 'hevc'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='h264',
+        transcode_audio_codec='aac',
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'hevc',
+                'profile': 'Main 10',
+                'level': 150,
+                'codec_type': 'video',
+                'codec_tag_string': 'hvc1',
+                'width': 3840,
+                'height': 2160,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'color_primaries': 'bt2020',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '50000000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert 'CODECS="hvc1.2.4.H150.B0,mp4a.40.2"' in (
+        transcoder.get_stream_info_string()
     )
 
 
