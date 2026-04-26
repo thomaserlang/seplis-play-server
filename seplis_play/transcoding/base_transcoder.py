@@ -321,8 +321,6 @@ class BaseTranscoder:
                         code=BlockerCode.FORCED,
                         scope=DecisionScope.VIDEO,
                         stream=StreamKind.VIDEO,
-                        source_codec=self.video_input_codec,
-                        target_codec=self.settings.transcode_video_codec,
                     )
                 ],
             )
@@ -335,7 +333,6 @@ class BaseTranscoder:
                         code=BlockerCode.UNSUPPORTED_CODEC,
                         scope=DecisionScope.VIDEO,
                         stream=StreamKind.VIDEO,
-                        source_codec=self.video_input_codec,
                     )
                 ],
             )
@@ -371,25 +368,7 @@ class BaseTranscoder:
                         code=BlockerCode.UNSUPPORTED_HDR,
                         scope=DecisionScope.VIDEO,
                         stream=StreamKind.VIDEO,
-                        source_hdr=self.video_color.range_type,
-                    )
-                ],
-            )
-
-        if (
-            self.settings.max_width
-            and self.settings.max_width < self.video_stream['width']
-        ):
-            return DecisionCheck(
-                supported=False,
-                blockers=[
-                    DecisionBlocker(
-                        code=BlockerCode.LIMIT_EXCEEDED,
-                        scope=DecisionScope.VIDEO,
-                        stream=StreamKind.VIDEO,
-                        limit_kind=LimitKind.WIDTH,
-                        limit=self.settings.max_width,
-                        actual=self.video_stream['width'],
+                        actual=self.video_color.range_type,
                     )
                 ],
             )
@@ -408,6 +387,24 @@ class BaseTranscoder:
                         limit_kind=LimitKind.VIDEO_BITRATE,
                         limit=self.settings.max_video_bitrate,
                         actual=self.source.bitrate,
+                    )
+                ],
+            )
+
+        if (
+            self.settings.max_width
+            and self.settings.max_width < self.video_stream['width']
+        ):
+            return DecisionCheck(
+                supported=False,
+                blockers=[
+                    DecisionBlocker(
+                        code=BlockerCode.LIMIT_EXCEEDED,
+                        scope=DecisionScope.VIDEO,
+                        stream=StreamKind.VIDEO,
+                        limit_kind=LimitKind.WIDTH,
+                        limit=self.settings.max_width,
+                        actual=self.video_stream['width'],
                     )
                 ],
             )
@@ -464,7 +461,7 @@ class BaseTranscoder:
                     DecisionBlocker(
                         code=BlockerCode.UNSUPPORTED_CONTAINER,
                         scope=DecisionScope.CONTAINER,
-                        source_container=self.metadata['format']['format_name'],
+                        actual=self.metadata['format']['format_name'],
                     )
                 ],
             )
@@ -488,7 +485,7 @@ class BaseTranscoder:
                             )
                         ],
                     )
-                
+
         return DecisionCheck(
             supported=True,
             blockers=[],
@@ -513,8 +510,6 @@ class BaseTranscoder:
                         code=BlockerCode.VIDEO_TRANSCODE_REQUIRES_AUDIO_TRANSCODE,
                         scope=DecisionScope.AUDIO,
                         stream=StreamKind.AUDIO,
-                        source_codec=self.audio_input_codec,
-                        target_codec=self.settings.transcode_audio_codec,
                     )
                 ],
             )
@@ -781,7 +776,6 @@ class BaseTranscoder:
                         code=BlockerCode.UNSUPPORTED_CODEC,
                         scope=DecisionScope.AUDIO,
                         stream=StreamKind.AUDIO,
-                        source_codec=codec_name,
                     )
                 ],
             )

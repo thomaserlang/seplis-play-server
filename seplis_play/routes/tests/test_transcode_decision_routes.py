@@ -129,7 +129,6 @@ def test_direct_play_reports_one_blocker_for_audio_codec_mismatch() -> None:
     assert blocker.code is BlockerCode.UNSUPPORTED_CODEC
     assert blocker.scope is DecisionScope.AUDIO
     assert blocker.stream is StreamKind.AUDIO
-    assert blocker.source_codec == 'aac'
 
 
 def test_request_media_exposes_transcode_decision_by_session() -> None:

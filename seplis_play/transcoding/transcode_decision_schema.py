@@ -56,13 +56,9 @@ class DecisionBlocker:
     code: BlockerCode
     scope: DecisionScope
     stream: StreamKind | None = None
-    source_codec: str | None = None
-    target_codec: str | None = None
-    source_container: str | None = None
-    source_hdr: str | None = None
     limit_kind: LimitKind | None = None
     limit: int | None = None
-    actual: int | None = None
+    actual: int | str | None = None
 
 
 class DecisionCheck(BaseModel):
@@ -99,10 +95,6 @@ def format_blocker(blocker: DecisionBlocker) -> str:
     fields = [
         ('scope', blocker.scope.value),
         ('stream', blocker.stream.value if blocker.stream else None),
-        ('source_codec', blocker.source_codec),
-        ('target_codec', blocker.target_codec),
-        ('source_container', blocker.source_container),
-        ('source_hdr', blocker.source_hdr),
         ('limit_kind', blocker.limit_kind.value if blocker.limit_kind else None),
         ('limit', blocker.limit),
         ('actual', blocker.actual),
