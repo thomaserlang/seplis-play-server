@@ -93,7 +93,6 @@ class BaseTranscoder:
         self.audio_copy_decision = self.evaluate_can_copy_audio()
         self.can_copy_audio = self.audio_copy_decision.supported
         self.direct_play_decision = self.evaluate_can_device_direct_play()
-        self.transcode_decision = self.build_transcode_decision()
         self.video_output_codec_lib = None
         self.audio_output_codec_lib = None
         self.video_output_codec = (
@@ -106,6 +105,8 @@ class BaseTranscoder:
             if self.can_copy_audio
             else self.settings.transcode_audio_codec
         )
+        self.configure_output_compatibility()
+        self.transcode_decision = self.build_transcode_decision()
         self.ffmpeg_args: list[Mapping[str, str | float | int | None]] = []
         self.transcode_folder = ''
         self.ffmpeg_runner = FFmpegRunner()
@@ -140,6 +141,13 @@ class BaseTranscoder:
 
     def ffmpeg_change_args(self) -> None:
         pass
+
+    def configure_output_compatibility(self) -> None:
+        if self.can_copy_video:
+            return
+        if self.video_output_codec == 'hevc':
+            self.settings.supported_hdr_formats = []
+            self.settings.supported_video_color_bit_depth = 8
 
     async def wait_for_media(self) -> bool:
         return True
@@ -537,22 +545,14 @@ class BaseTranscoder:
                 kind=StreamKind.VIDEO,
                 action=video_action,
                 source_codec=self.video_input_codec,
-                target_codec=(
-                    self.settings.transcode_video_codec
-                    if video_transcode_required
-                    else self.video_input_codec
-                ),
+                target_codec=self.video_output_codec,
                 blockers=tuple(self.video_copy_decision.blockers),
             ),
             audio=StreamDecision(
                 kind=StreamKind.AUDIO,
                 action=audio_action,
                 source_codec=self.audio_input_codec,
-                target_codec=(
-                    self.settings.transcode_audio_codec
-                    if audio_transcode_required
-                    else self.audio_input_codec
-                ),
+                target_codec=self.audio_output_codec,
                 blockers=tuple(audio_decision.blockers),
             ),
             direct_play=DirectPlayDecision(
@@ -1056,12 +1056,13 @@ def summarize_transcode_decision(decision: TranscodeDecision) -> str:
     direct_play_blockers = ', '.join(
         format_blocker(blocker) for blocker in decision.direct_play.blockers
     )
+
     return (
         f'method={decision.method} | '
         f'target_format={decision.target_format} | '
         f'video={decision.video.action} '
         f'({decision.video.source_codec} -> {decision.video.target_codec}; '
-        f'{", ".join(format_blocker(blocker) for blocker in decision.video.blockers)}) | '
+        f'{", ".join(format_blocker(blocker) for blocker in decision.video.blockers)}; '
         f'audio={decision.audio.action} '
         f'({decision.audio.source_codec} -> {decision.audio.target_codec}; '
         f'{", ".join(format_blocker(blocker) for blocker in decision.audio.blockers)}) | '

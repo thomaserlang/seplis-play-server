@@ -44,9 +44,7 @@ class BlockerCode(StrEnum):
     UNSUPPORTED_HDR = 'unsupported_hdr'
     LIMIT_EXCEEDED = 'limit_exceeded'
     MISSING_KEYFRAMES = 'missing_keyframes'
-    VIDEO_TRANSCODE_REQUIRES_AUDIO_TRANSCODE = (
-        'video_transcode_requires_audio_transcode'
-    )
+    VIDEO_TRANSCODE_REQUIRES_AUDIO_TRANSCODE = 'video_transcode_requires_audio_transcode'
     UNSUPPORTED_CONTAINER = 'unsupported_container'
     CLIENT_AUDIO_TRACK_SWITCH_UNSUPPORTED = 'client_audio_track_switch_unsupported'
 

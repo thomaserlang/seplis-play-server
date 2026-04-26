@@ -218,7 +218,11 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         return '\n'.join(playlist)
 
     def get_video_range(self) -> str:
-        if not self.can_copy_video or self.video_output_codec not in self.HDR_CODECS:
+        if self.video_output_codec not in self.HDR_CODECS:
+            return 'SDR'
+        if not self.can_copy_video:
+            return 'SDR'
+        if self.video_color.range_type not in self.settings.supported_hdr_formats:
             return 'SDR'
         if self.video_color.range_type == 'hdr10':
             return 'PQ'
@@ -243,14 +247,19 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         return ','.join(info)
 
     def get_frame_rate(self) -> str:
+        frame_rate = self.get_frame_rate_decimal()
+        if not frame_rate:
+            return ''
+        return f'{frame_rate:.3f}'
+
+    def get_frame_rate_decimal(self) -> Decimal:
         frame_rate_value = self.video_stream.get('r_frame_rate')
         if not frame_rate_value:
-            return ''
+            return Decimal(0)
         numerator, denominator = frame_rate_value.split('/')
         if denominator == '0':
-            return ''
-        frame_rate = Decimal(numerator) / Decimal(denominator)
-        return f'{frame_rate:.3f}'
+            return Decimal(0)
+        return Decimal(numerator) / Decimal(denominator)
 
     def get_segments(self) -> list[Decimal]:
         if self.can_copy_video:
@@ -380,14 +389,18 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
                 )
             return 'avc1'
         if self.video_output_codec == 'hevc':
-            if self.can_copy_video:
+            if not self.can_copy_video:
                 return self.get_hevc_codec_string(
-                    self.video_stream.get('profile', ''),
-                    self.video_stream.get('level', 0),
-                    self.video_stream.get('tier', ''),
-                    self.source.bitrate,
+                    profile='Main',
+                    level=150,
+                    bitrate=self.get_video_bitrate(),
                 )
-            return 'hvc1'
+            return self.get_hevc_codec_string(
+                self.video_stream.get('profile', ''),
+                self.video_stream.get('level', 0),
+                self.video_stream.get('tier', ''),
+                self.get_video_bitrate(),
+            )
         if self.video_output_codec == 'av1':
             return 'av01'
         return ''

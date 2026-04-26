@@ -658,5 +658,69 @@ def test_hls_hevc_stream_info_infers_high_tier_from_bitrate() -> None:
     )
 
 
+def test_hls_hevc_hdr10_transcode_uses_jellyfin_compatible_sdr_main_profile() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=['hdr10'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264', 'hevc'],
+        supported_audio_codecs=['aac'],
+        transcode_video_codec='hevc',
+        transcode_audio_codec='aac',
+        max_video_bitrate=10_000_000,
+        format='hls',
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'hevc',
+                'profile': 'Main 10',
+                'level': 150,
+                'tier': 'High',
+                'codec_type': 'video',
+                'codec_tag_string': 'hvc1',
+                'width': 3840,
+                'height': 2160,
+                'pix_fmt': 'yuv420p10le',
+                'color_transfer': 'smpte2084',
+                'color_primaries': 'bt2020',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'format_name': 'mp4',
+            'filename': '/tmp/movie.mp4',
+            'duration': '120.000000',
+            'size': '1000000',
+            'bit_rate': '50000000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = HlsTranscoder(settings, metadata)
+
+    assert transcoder.can_copy_video is False
+    assert transcoder.video_output_codec == 'hevc'
+    assert transcoder.transcode_decision.video.target_codec == 'hevc'
+    assert transcoder.settings.supported_hdr_formats == []
+    assert transcoder.settings.supported_video_color_bit_depth == 8
+    assert transcoder.get_video_range() == 'SDR'
+    assert (
+        transcoder.get_stream_info_string()
+        == 'AVERAGE-BANDWIDTH=10000000,BANDWIDTH=10000000,VIDEO-RANGE=SDR,'
+        'CODECS="hvc1.1.4.L150.B0,mp4a.40.2",RESOLUTION=3840x2160,'
+        'FRAME-RATE=23.976'
+    )
+
+
 if __name__ == '__main__':
     run_file(__file__)
