@@ -2,7 +2,7 @@ import asyncio
 
 from seplis_play.routes.request_media_routes import request_media_route
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
-from seplis_play.transcoding.base_transcoder import Transcoder, sessions
+from seplis_play.transcoding.base_transcoder import BaseTranscoder, sessions
 from seplis_play.transcoding.transcode_decision_schema import (
     BlockerCode,
     DecisionScope,
@@ -89,7 +89,7 @@ def test_transcoder_collects_compact_transcode_blockers() -> None:
         supported_audio_codecs=['aac'],
     )
 
-    transcoder = Transcoder(settings=settings, metadata=TRANSCODE_METADATA)
+    transcoder = BaseTranscoder(settings=settings, metadata=TRANSCODE_METADATA)
 
     assert transcoder.transcode_decision.method is PlaybackMethod.TRANSCODE
     assert transcoder.transcode_decision.direct_play.supported is False
@@ -121,7 +121,7 @@ def test_direct_play_reports_one_blocker_for_audio_codec_mismatch() -> None:
         supported_audio_codecs=['opus'],
     )
 
-    transcoder = Transcoder(settings=settings, metadata=DIRECT_PLAY_METADATA)
+    transcoder = BaseTranscoder(settings=settings, metadata=DIRECT_PLAY_METADATA)
 
     assert transcoder.transcode_decision.direct_play.supported is False
     assert len(transcoder.transcode_decision.direct_play.blockers) == 1
@@ -157,7 +157,6 @@ def test_request_media_exposes_transcode_decision_by_session() -> None:
     assert 'hls_include_all_subtitles=False' in response.hls_url
     assert response.transcode_decision
     assert response.model_dump(mode='json')['transcode_decision'] == {
-        'session': session,
         'method': 'direct_play',
         'target_format': 'hls',
         'required': False,

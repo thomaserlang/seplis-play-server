@@ -19,7 +19,7 @@ from seplis_play.transcoding.tests.test_transcode_schema import TranscodeSetting
 from . import base_transcoder
 
 
-class HlsTranscoder(base_transcoder.Transcoder):
+class HlsTranscoder(base_transcoder.BaseTranscoder):
     MEDIA_NAME: str = 'media.m3u8'
     CODECES = ('h264', 'hevc', 'av1')
     HDR_CODECS = ('hevc', 'av1')
@@ -369,10 +369,6 @@ class HlsTranscoder(base_transcoder.Transcoder):
 
     def get_audio_codec_string(self) -> str:
         if self.audio_output_codec == 'aac':
-            if self.can_copy_audio:
-                return self.get_aac_codec_string(
-                    self.audio_stream.get('profile', ''),
-                )
             return self.get_aac_codec_string('')
         if self.audio_output_codec == 'ac3':
             return 'mp4a.a5'

@@ -48,7 +48,7 @@ class BlockerCode(StrEnum):
         'video_transcode_requires_audio_transcode'
     )
     UNSUPPORTED_CONTAINER = 'unsupported_container'
-    AUDIO_TRACK_SWITCH_UNSUPPORTED = 'audio_track_switch_unsupported'
+    CLIENT_AUDIO_TRACK_SWITCH_UNSUPPORTED = 'client_audio_track_switch_unsupported'
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +87,6 @@ class StreamDecision:
 
 @dataclass(frozen=True, slots=True)
 class TranscodeDecision:
-    session: str
     method: PlaybackMethod
     target_format: OutputFormat
     required: bool

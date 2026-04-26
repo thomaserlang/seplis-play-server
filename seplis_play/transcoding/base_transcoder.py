@@ -15,7 +15,6 @@ from seplis_play import config
 from seplis_play.ffmpeg.ffmpeg_runner import FFmpegRunner
 from seplis_play.schemas.source_metadata_schemas import (
     SourceMetadata,
-    SourceMetadataAudioStream,
     SourceMetadataVideoStream,
 )
 from seplis_play.schemas.source_schemas import Source, SourceStream
@@ -75,7 +74,7 @@ class StreamIndex(BaseModel):
     group_index: int
 
 
-class Transcoder:
+class BaseTranscoder:
     def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         self.settings = settings
         self.metadata = metadata
@@ -86,7 +85,7 @@ class Transcoder:
         self.video_stream = self.get_video_stream()
         self.audio_stream = self.get_audio_stream()
         self.video_input_codec = self.video_stream['codec_name']
-        self.audio_input_codec = self.audio_stream['codec_name']
+        self.audio_input_codec = self.audio_stream.codec or ''
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
         self.video_copy_decision = self.evaluate_can_copy_video()
@@ -95,7 +94,6 @@ class Transcoder:
         self.can_copy_audio = self.audio_copy_decision.supported
         self.direct_play_decision = self.evaluate_can_device_direct_play()
         self.transcode_decision = self.build_transcode_decision()
-        store_transcode_decision(self.transcode_decision)
         self.video_output_codec_lib = None
         self.audio_output_codec_lib = None
         self.video_output_codec = (
@@ -474,26 +472,23 @@ class Transcoder:
         if not self.settings.client_can_switch_audio_track:
             # It's possible that multiple audio streams are marked as default :)
             default_count = 0
-            for stream in self.metadata['streams']:
-                if stream['codec_type'] == 'audio':
-                    if stream.get('disposition', {}).get('default'):
-                        default_count += 1
+            for stream in self.source.audio:
+                if stream.default:
+                    default_count += 1
 
-            if not self.audio_stream.get('disposition', {}).get('default') or (
-                default_count > 1
-            ):
-                if self.audio_stream.get('group_index', 0) != 0:
+            if not self.audio_stream.default or (default_count > 1):
+                if self.audio_stream.group_index != 0:
                     return DecisionCheck(
                         supported=False,
                         blockers=[
                             DecisionBlocker(
-                                code=BlockerCode.AUDIO_TRACK_SWITCH_UNSUPPORTED,
+                                code=BlockerCode.CLIENT_AUDIO_TRACK_SWITCH_UNSUPPORTED,
                                 scope=DecisionScope.PLAYBACK,
                                 stream=StreamKind.AUDIO,
                             )
                         ],
                     )
-
+                
         return DecisionCheck(
             supported=True,
             blockers=[],
@@ -533,18 +528,13 @@ class Transcoder:
             method = PlaybackMethod.REMUX
 
         video_action: StreamAction = (
-            StreamAction.TRANSCODE
-            if video_transcode_required
-            else StreamAction.COPY
+            StreamAction.TRANSCODE if video_transcode_required else StreamAction.COPY
         )
         audio_action: StreamAction = (
-            StreamAction.TRANSCODE
-            if audio_transcode_required
-            else StreamAction.COPY
+            StreamAction.TRANSCODE if audio_transcode_required else StreamAction.COPY
         )
 
         return TranscodeDecision(
-            session=self.settings.session,
             method=method,
             target_format=OutputFormat(self.settings.format),
             required=needs_transcode,
@@ -733,8 +723,7 @@ class Transcoder:
         return params
 
     def set_audio(self) -> None:
-        stream = self.audio_stream
-        codec = codecs_to_library.get(stream['codec_name'], '')
+        codec = codecs_to_library.get(self.audio_stream.codec or '', '')
 
         # Audio goes out of sync if audio copy is used while the video is being transcoded
         if self.can_copy_video and self.can_copy_audio:
@@ -742,32 +731,32 @@ class Transcoder:
         else:
             if not codec or codec not in self.settings.supported_audio_codecs:
                 codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
-            bitrate = stream.get('bit_rate', stream['channels'] * 128000)
+            audio_channels = self.audio_stream.channels or 2
+            bitrate = self.audio_stream.bitrate or audio_channels * 128000
             if (
                 self.settings.max_audio_channels
-                and self.settings.max_audio_channels < stream['channels']
+                and self.settings.max_audio_channels < audio_channels
             ):
                 bitrate = self.settings.max_audio_channels * 128000
                 self.ffmpeg_args.append({'-ac': self.settings.max_audio_channels})
             else:
-                self.ffmpeg_args.append({'-ac': stream['channels']})
+                self.ffmpeg_args.append({'-ac': audio_channels})
             self.ffmpeg_args.append({'-b:a': bitrate})
         if not codec:
             raise Exception('No audio codec library')
         self.audio_output_codec_lib = codec
         self.ffmpeg_args.extend(
             [
-                {'-map': f'0:{stream["index"]}'},
+                {'-map': f'0:{self.audio_stream.index}'},
                 {'-c:a': codec},
             ]
         )
 
     def evaluate_can_copy_audio(self) -> DecisionCheck:
-        stream = self.audio_stream
-
+        audio_channels = self.audio_stream.channels or 2
         if (
             self.settings.max_audio_channels
-            and self.settings.max_audio_channels < stream['channels']
+            and self.settings.max_audio_channels < audio_channels
         ):
             return DecisionCheck(
                 supported=False,
@@ -778,12 +767,13 @@ class Transcoder:
                         stream=StreamKind.AUDIO,
                         limit_kind=LimitKind.AUDIO_CHANNELS,
                         limit=self.settings.max_audio_channels,
-                        actual=stream['channels'],
+                        actual=audio_channels,
                     )
                 ],
             )
 
-        if stream['codec_name'] not in self.settings.supported_audio_codecs:
+        codec_name = self.audio_stream.codec or ''
+        if codec_name not in self.settings.supported_audio_codecs:
             return DecisionCheck(
                 supported=False,
                 blockers=[
@@ -791,7 +781,7 @@ class Transcoder:
                         code=BlockerCode.UNSUPPORTED_CODEC,
                         scope=DecisionScope.AUDIO,
                         stream=StreamKind.AUDIO,
-                        source_codec=stream['codec_name'],
+                        source_codec=codec_name,
                     )
                 ],
             )
@@ -902,16 +892,13 @@ class Transcoder:
     def get_video_stream(self) -> SourceMetadataVideoStream:
         return get_video_stream(self.metadata)
 
-    def get_audio_stream(self) -> SourceMetadataAudioStream:
+    def get_audio_stream(self) -> SourceStream:
         stream = self.stream_by_lang(self.source.audio, self.settings.audio_lang)
         if stream is None and self.source.audio:
             stream = self.source.audio[0]
         if stream is None:
             raise Exception('No audio stream')
-        stream_metadata = self.metadata['streams'][stream.index]
-        if stream_metadata['codec_type'] != 'audio':
-            raise Exception('Selected stream is not audio')
-        return stream_metadata
+        return stream
 
     def find_ffmpeg_arg(self, key: str) -> str | int | float | None:
         for a in self.ffmpeg_args:
@@ -1085,14 +1072,4 @@ def summarize_transcode_decision(decision: TranscodeDecision) -> str:
         f'({decision.audio.source_codec} -> {decision.audio.target_codec}; '
         f'{", ".join(format_blocker(blocker) for blocker in decision.audio.blockers)}) | '
         f'direct_play={direct_play_status} ({direct_play_blockers})'
-    )
-
-
-def store_transcode_decision(decision: TranscodeDecision) -> None:
-    previous = sessions.get(decision.session)
-    if previous and previous.transcode_decision == decision:
-        return
-    logger.info(
-        f'[{decision.session}] Transcode decision: '
-        f'{summarize_transcode_decision(decision)}'
     )

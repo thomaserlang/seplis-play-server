@@ -16,6 +16,7 @@ class SourceStream:
     group_index: int | None = None
     default: bool = False
     forced: bool = False
+    bitrate: int | None = None
 
 
 @dataclass
@@ -110,6 +111,9 @@ def source_streams_from_metadata(
                 group_index=len(result),
                 default=stream.get('disposition', {}).get('default', 0) == 1,
                 forced=stream.get('disposition', {}).get('forced', 0) == 1,
+                bitrate=source_int(stream.get('bit_rate', 0))
+                if stream.get('bit_rate')
+                else None,
             )
         )
     return result

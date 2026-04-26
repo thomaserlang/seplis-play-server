@@ -8,7 +8,7 @@ from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 from ..dependencies import get_metadata
 from ..schemas.source_metadata_schemas import SourceMetadata
-from ..transcoding.base_transcoder import Transcoder
+from ..transcoding.base_transcoder import BaseTranscoder
 from ..transcoding.transcode_decision_schema import TranscodeDecision
 
 router = APIRouter()
@@ -29,7 +29,7 @@ async def request_media_route(
     settings: Annotated[TranscodeSettings, Depends()],
     metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> RequestMedia:
-    t = Transcoder(settings=settings, metadata=metadata)
+    t = BaseTranscoder(settings=settings, metadata=metadata)
     hls_file = (
         'main'
         if settings.hls_include_all_subtitles or settings.hls_subtitle_lang
