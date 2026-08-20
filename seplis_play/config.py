@@ -113,7 +113,7 @@ class ConfigModel(BaseSettings):
     port: int = 8003
     transcode_folder: Path = Path(tempfile.gettempdir()) / 'seplis_play'
     thumbnails_path: Path | None = None
-    session_timeout: int = 10  # Timeout for HLS sessions
+    session_timeout: int = 60  # Timeout for HLS sessions
     server_id: str = ''
     api_url: AnyHttpUrl = AnyHttpUrl('https://api.seplis.net')
     logging: ConfigLoggingModel = ConfigLoggingModel()

@@ -45,11 +45,12 @@ class VideoColor(BaseModel):
 @dataclass
 class SessionModel:
     ffmpeg_runner: FFmpegRunner
-    call_later: asyncio.TimerHandle
+    call_later: asyncio.TimerHandle | None
     transcode_folder: str | None = None
     segment_time: int = 0
     start_segment: int = 0
     transcode_decision: TranscodeDecision | None = None
+    timeout_generation: int = 0
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -175,7 +176,6 @@ class BaseTranscoder:
         raise NotImplementedError()
 
     async def register_session(self) -> None:
-        loop = asyncio.get_event_loop()
         if self.settings.session in sessions:
             await close_transcoder(self.settings.session)
             logger.info(f'[{self.settings.session}] Reregistered')
@@ -184,27 +184,16 @@ class BaseTranscoder:
             sessions[self.settings.session].start_segment = (
                 self.settings.start_segment or 0
             )
-            sessions[self.settings.session].call_later.cancel()
-            sessions[self.settings.session].call_later = loop.call_later(
-                config.session_timeout,
-                close_session_callback,
-                self.settings.session,
-                self.ffmpeg_runner,
-            )
         else:
             logger.info(f'[{self.settings.session}] Registered')
             sessions[self.settings.session] = SessionModel(
                 ffmpeg_runner=self.ffmpeg_runner,
                 transcode_folder=self.transcode_folder,
-                call_later=loop.call_later(
-                    config.session_timeout,
-                    close_session_callback,
-                    self.settings.session,
-                    self.ffmpeg_runner,
-                ),
+                call_later=None,
                 transcode_decision=self.transcode_decision,
                 start_segment=self.settings.start_segment or 0,
             )
+        reset_session_timeout(self.settings.session)
 
     async def set_ffmpeg_args(self) -> None:
         self.ffmpeg_args = [
@@ -1033,28 +1022,69 @@ def stream_by_lang(streams: list[SourceStream], lang: str | None) -> SourceStrea
     return None
 
 
-def close_session_callback(session: str, runner: FFmpegRunner) -> None:
+def reset_session_timeout(session: str) -> bool:
+    session_model = sessions.get(session)
+    if session_model is None:
+        return False
+
+    if session_model.call_later is not None:
+        session_model.call_later.cancel()
+    session_model.timeout_generation += 1
+    session_model.call_later = asyncio.get_running_loop().call_later(
+        config.session_timeout,
+        close_session_callback,
+        session,
+        session_model.ffmpeg_runner,
+        session_model.timeout_generation,
+    )
+    return True
+
+
+async def refresh_session_timeout(session: str) -> bool:
+    async with get_session_lock(session):
+        return reset_session_timeout(session)
+
+
+def close_session_callback(
+    session: str,
+    runner: FFmpegRunner,
+    timeout_generation: int,
+) -> None:
     logger.debug(f'[{session}] Session timeout reached')
-    _ = asyncio.create_task(close_session(session, expected_runner=runner))
+    _ = asyncio.create_task(
+        close_session(
+            session,
+            expected_runner=runner,
+            expected_timeout_generation=timeout_generation,
+        )
+    )
 
 
 async def close_session(
     session: str,
     expected_runner: FFmpegRunner | None = None,
+    expected_timeout_generation: int | None = None,
 ) -> None:
     async with get_session_lock(session):
-        await _close_session(session, expected_runner)
+        await _close_session(session, expected_runner, expected_timeout_generation)
 
 
 async def _close_session(
     session: str,
     expected_runner: FFmpegRunner | None,
+    expected_timeout_generation: int | None,
 ) -> None:
     if session not in sessions:
         logger.info(f'[{session}] Already closed')
         return
     if expected_runner and sessions[session].ffmpeg_runner is not expected_runner:
         logger.debug(f'[{session}] Ignoring stale session timeout')
+        return
+    if (
+        expected_timeout_generation is not None
+        and sessions[session].timeout_generation != expected_timeout_generation
+    ):
+        logger.debug(f'[{session}] Ignoring refreshed session timeout')
         return
     logger.info(f'[{session}] Closing')
     await close_transcoder(session)
@@ -1069,7 +1099,8 @@ async def _close_session(
                 )
     except Exception as e:
         logger.error(f'[{session}] Failed to delete transcode folder: {e}')
-    s.call_later.cancel()
+    if s.call_later is not None:
+        s.call_later.cancel()
     del sessions[session]
 
 

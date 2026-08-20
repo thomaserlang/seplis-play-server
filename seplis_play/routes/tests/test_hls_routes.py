@@ -5,7 +5,11 @@ import pytest
 
 from seplis_play import config
 from seplis_play.routes import hls_routes
-from seplis_play.transcoding.base_transcoder import close_session, sessions
+from seplis_play.transcoding.base_transcoder import (
+    close_session,
+    refresh_session_timeout,
+    sessions,
+)
 from seplis_play.transcoding.hls_transcoder import HlsTranscoder
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
@@ -97,4 +101,61 @@ async def test_stale_timeout_does_not_close_replacement_session() -> None:
 
         assert sessions[session].ffmpeg_runner is current_runner
     finally:
+        sessions.pop(session, None)
+
+
+@pytest.mark.asyncio
+async def test_stale_timeout_does_not_close_refreshed_session() -> None:
+    runner = object()
+    session = 'd' * 32
+    sessions[session] = cast(
+        Any,
+        type(
+            'Session',
+            (),
+            {
+                'ffmpeg_runner': runner,
+                'timeout_generation': 2,
+            },
+        )(),
+    )
+
+    try:
+        await close_session(
+            session,
+            expected_runner=cast(Any, runner),
+            expected_timeout_generation=1,
+        )
+
+        assert sessions[session].ffmpeg_runner is runner
+    finally:
+        sessions.pop(session, None)
+
+
+@pytest.mark.asyncio
+async def test_refresh_session_timeout_replaces_timer() -> None:
+    loop = asyncio.get_running_loop()
+    old_timer = loop.call_later(3600, lambda: None)
+    runner = object()
+    session = 'e' * 32
+    sessions[session] = cast(
+        Any,
+        type(
+            'Session',
+            (),
+            {
+                'ffmpeg_runner': runner,
+                'call_later': old_timer,
+                'timeout_generation': 1,
+            },
+        )(),
+    )
+
+    try:
+        assert await refresh_session_timeout(session) is True
+        assert old_timer.cancelled()
+        assert sessions[session].timeout_generation == 2
+        assert sessions[session].call_later is not old_timer
+    finally:
+        sessions[session].call_later.cancel()
         sessions.pop(session, None)

@@ -15,6 +15,7 @@ from ..transcoding.base_transcoder import (
     TranscodeSettings,
     close_transcoder,
     get_session_lock,
+    refresh_session_timeout,
     sessions,
 )
 from ..transcoding.hls_transcoder import HlsTranscoder
@@ -39,7 +40,7 @@ async def get_media_route(
     settings: Annotated[TranscodeSettings, Depends()],
     metadata: Annotated[SourceMetadata, Depends(get_metadata)],
 ) -> Response:
-    if settings.session in sessions:
+    if await refresh_session_timeout(settings.session):
         transcoder = HlsTranscoder(settings=settings, metadata=metadata)
     else:
         transcoder = await start_transcode(settings)
@@ -78,6 +79,7 @@ async def get_media_segment_route(
     segment: int,
     settings: Annotated[TranscodeSettings, Depends()],
 ) -> FileResponse:
+    await refresh_session_timeout(settings.session)
     if settings.session in sessions:
         folder: str | None = sessions[settings.session].transcode_folder
 
@@ -121,9 +123,10 @@ async def get_media_segment_route(
 
 
 @router.get('/hls/init.mp4', name='Get HLS init segment')
-def get_init_segment_route(
+async def get_init_segment_route(
     settings: Annotated[TranscodeSettings, Depends()],
 ) -> FileResponse:
+    await refresh_session_timeout(settings.session)
     p = config.transcode_folder / settings.session / 'init.mp4'
     if not p.is_file():
         raise HTTPException(404, 'No init file')
