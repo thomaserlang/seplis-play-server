@@ -1,0 +1,352 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#   "textual>=0.89",
+# ]
+# ///
+from __future__ import annotations
+
+import datetime as dt
+import subprocess
+from dataclasses import dataclass
+
+from textual import on  # ty: ignore[unresolved-import]
+from textual.app import App, ComposeResult  # ty: ignore[unresolved-import]
+from textual.binding import Binding  # ty: ignore[unresolved-import]
+from textual.containers import (  # ty: ignore[unresolved-import]
+    Container,
+    Horizontal,
+    Vertical,
+)
+from textual.screen import ModalScreen  # ty: ignore[unresolved-import]
+from textual.widgets import (  # ty: ignore[unresolved-import]
+    Button,
+    DataTable,
+    Header,
+    Label,
+    Static,
+)
+
+
+@dataclass(slots=True)
+class ReleaseStatus:
+    latest_tag: str | None
+    changes: list[str]
+    next_tag: str
+
+    @property
+    def suggested(self) -> bool:
+        return bool(self.changes)
+
+
+@dataclass(frozen=True, slots=True)
+class BranchSyncStatus:
+    branch: str
+    upstream: str | None
+    ahead: int
+    behind: int
+    dirty: bool
+
+    @property
+    def needs_push(self) -> bool:
+        return self.ahead > 0
+
+    @property
+    def needs_pull(self) -> bool:
+        return self.behind > 0
+
+
+CSS = """
+Screen {
+    background: #101418;
+}
+
+#layout {
+    height: 100%;
+}
+
+#table {
+    height: auto;
+    max-height: 11;
+    margin: 1 2 0 2;
+}
+
+#release-button {
+    min-width: 12;
+    max-width: 14;
+    margin-right: 2;
+}
+
+#status {
+    height: auto;
+    padding: 0 2;
+    color: #f3d48b;
+}
+
+#actions {
+    height: auto;
+    margin: 1 2 0 2;
+}
+
+#footer {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+    background: #2d2d2d;
+    color: #e0e0e0;
+}
+
+ModalScreen {
+    align: center middle;
+}
+
+#dialog {
+    width: 58;
+    max-width: 90%;
+    border: round #7aa2f7;
+    background: #171c22;
+    padding: 0 1;
+}
+
+#dialog-title {
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog-buttons {
+    height: auto;
+    margin-top: 0;
+}
+
+Button {
+    min-width: 10;
+    margin-right: 1;
+}
+"""
+
+
+def run_git(*args: str, check: bool = True) -> str:
+    result = subprocess.run(
+        ('git', *args),
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def fetch_tags() -> None:
+    subprocess.run(
+        ('git', 'fetch', '--tags', '--quiet', 'origin'),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def branch_sync_status() -> BranchSyncStatus:
+    branch = run_git('branch', '--show-current') or 'HEAD'
+    dirty = bool(run_git('status', '--porcelain'))
+    upstream = run_git(
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        '@{upstream}',
+        check=False,
+    )
+    if not upstream:
+        return BranchSyncStatus(
+            branch=branch,
+            upstream=None,
+            ahead=0,
+            behind=0,
+            dirty=dirty,
+        )
+
+    counts = run_git('rev-list', '--left-right', '--count', f'HEAD...{upstream}')
+    ahead_text, behind_text = counts.split()
+    return BranchSyncStatus(
+        branch=branch,
+        upstream=upstream,
+        ahead=int(ahead_text),
+        behind=int(behind_text),
+        dirty=dirty,
+    )
+
+
+def branch_sync_block_message(status: BranchSyncStatus) -> str | None:
+    if status.branch != 'main':
+        return f'Refusing release: current branch is {status.branch}, expected main.'
+
+    if status.dirty:
+        return 'Refusing release: the working tree has uncommitted changes.'
+
+    if status.upstream is None:
+        return f'Refusing release: {status.branch} has no upstream branch.'
+
+    missing: list[str] = []
+    if status.needs_pull:
+        missing.append(f'pull {status.behind} commit(s)')
+    if status.needs_push:
+        missing.append(f'push {status.ahead} commit(s)')
+
+    if not missing:
+        return None
+
+    return (
+        f'Refusing release: {status.branch} is out of sync with {status.upstream}; '
+        f'missing {" and ".join(missing)}.'
+    )
+
+
+def latest_release_tag() -> str | None:
+    tags = run_git('tag', '--list', 'v*', '--sort=-version:refname')
+    return tags.splitlines()[0] if tags else None
+
+
+def changed_paths_since(tag: str | None) -> list[str]:
+    if tag is None:
+        return ['no previous release']
+    output = run_git('diff', '--name-only', f'{tag}..HEAD')
+    return output.splitlines()
+
+
+def next_release_tag() -> str:
+    release_date = dt.date.today().strftime('%Y.%m.%d')
+    base_tag = f'v{release_date}'
+    tags = set(run_git('tag', '--list', f'{base_tag}*').splitlines())
+
+    if base_tag not in tags:
+        return base_tag
+
+    suffixes: list[int] = []
+    prefix = f'{base_tag}.'
+    for tag in tags:
+        if tag.startswith(prefix):
+            suffix = tag.removeprefix(prefix)
+            if suffix.isdigit():
+                suffixes.append(int(suffix))
+
+    next_patch = (max(suffixes) + 1) if suffixes else 1
+    return f'{base_tag}.{next_patch}'
+
+
+def load_status() -> ReleaseStatus:
+    latest_tag = latest_release_tag()
+    return ReleaseStatus(
+        latest_tag=latest_tag,
+        changes=changed_paths_since(latest_tag),
+        next_tag=next_release_tag(),
+    )
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    def __init__(self, title: str, body: str) -> None:
+        super().__init__()
+        self.title_text = title
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id='dialog'):
+            yield Label(self.title_text, id='dialog-title')
+            yield Static(self.body)
+            with Horizontal(id='dialog-buttons'):
+                yield Button('Yes', variant='primary', id='confirm')
+                yield Button('No', id='cancel')
+
+    @on(Button.Pressed, '#confirm')
+    def confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, '#cancel')
+    def cancel(self) -> None:
+        self.dismiss(False)
+
+
+class ReleaseApp(App[None]):
+    TITLE = 'Seplis Play Server release'
+    CSS = CSS
+    BINDINGS = [
+        Binding('q', 'quit', 'Quit'),
+        Binding('escape', 'quit', show=False),
+        Binding('ctrl+c', 'quit', show=False),
+        Binding('r', 'release', 'Release'),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.status: ReleaseStatus | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Container(id='layout'):
+            yield DataTable(id='table')
+            with Horizontal(id='actions'):
+                yield Button('Release', variant='primary', id='release-button')
+                yield Static('', id='status')
+        yield Static('esc Quit   r Release', id='footer')
+
+    def on_mount(self) -> None:
+        fetch_tags()
+        self.reload()
+
+    def reload(self) -> None:
+        self.status = load_status()
+        table = self.query_one('#table', DataTable)
+        table.clear(columns=True)
+        table.cursor_type = 'row'
+        table.add_columns('Status', 'Changes', 'Latest tag', 'Next tag')
+        table.add_row(
+            'suggested' if self.status.suggested else 'no changes',
+            str(len(self.status.changes)),
+            self.status.latest_tag or '-',
+            self.status.next_tag,
+        )
+        table.focus()
+
+    def action_release(self) -> None:
+        fetch_tags()
+        block_message = branch_sync_block_message(branch_sync_status())
+        if block_message is not None:
+            self.query_one('#status', Static).update(block_message)
+            return
+
+        self.reload()
+        assert self.status is not None
+        warning = (
+            '' if self.status.suggested else '\n\nNo changes since the last release.'
+        )
+
+        self.push_screen(
+            ConfirmScreen(
+                'Create and push tag?',
+                self.status.next_tag + warning,
+            ),
+            lambda confirmed: (
+                self.create_and_push_tag(self.status.next_tag) if confirmed else None
+            ),
+        )
+
+    @on(Button.Pressed, '#release-button')
+    def release_button_pressed(self) -> None:
+        self.action_release()
+
+    def create_and_push_tag(self, tag: str) -> None:
+        try:
+            run_git('tag', tag)
+            subprocess.run(('git', 'push', 'origin', tag), check=True)
+            self.after_tag(tag)
+        except subprocess.CalledProcessError as exc:
+            self.query_one('#status', Static).update(
+                f'Command failed: git {" ".join(exc.cmd[1:])}'
+            )
+
+    def after_tag(self, tag: str) -> None:
+        fetch_tags()
+        self.reload()
+        self.query_one('#status', Static).update(f'Created and pushed: {tag}')
+
+
+if __name__ == '__main__':
+    ReleaseApp().run()
