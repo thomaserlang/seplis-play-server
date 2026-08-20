@@ -11,7 +11,12 @@ from .. import config
 from ..dependencies import get_metadata
 from ..schemas.source_metadata_schemas import SourceMetadata
 from ..schemas.source_schemas import Source
-from ..transcoding.base_transcoder import TranscodeSettings, sessions
+from ..transcoding.base_transcoder import (
+    TranscodeSettings,
+    close_transcoder,
+    get_session_lock,
+    sessions,
+)
 from ..transcoding.hls_transcoder import HlsTranscoder
 
 router = APIRouter()
@@ -129,8 +134,34 @@ async def start_transcode(
     settings: TranscodeSettings,
     start_segment: int = -1,
 ) -> HlsTranscoder:
+    async with get_session_lock(settings.session):
+        return await _start_transcode(settings, start_segment)
+
+
+async def _start_transcode(
+    settings: TranscodeSettings,
+    start_segment: int,
+) -> HlsTranscoder:
     metadata = await get_metadata(settings.play_id, settings.source_index)
     transcode = HlsTranscoder(settings=settings, metadata=metadata)
+
+    if start_segment >= 0 and settings.session in sessions:
+        session_model = sessions[settings.session]
+        folder = session_model.transcode_folder
+        if folder:
+            first, last = await HlsTranscoder.first_last_transcoded_segment(folder)
+            if first <= start_segment <= last:
+                return transcode
+            active_first = first if first >= 0 else session_model.start_segment
+            active_last = max(last, active_first)
+            if (
+                active_first <= start_segment
+                and start_segment
+                <= active_last + config.ffmpeg_segment_threshold_for_new_transcoder
+                and await HlsTranscoder.wait_for_segment(folder, start_segment)
+            ):
+                return transcode
+
     if start_segment == -1:
         transcode.settings.start_segment = transcode.start_segment_from_start_time(
             settings.start_time
@@ -141,6 +172,9 @@ async def start_transcode(
     else:
         transcode.settings.start_time = transcode.start_time_from_segment(start_segment)
         transcode.settings.start_segment = start_segment
+
+    if settings.session in sessions:
+        await close_transcoder(settings.session)
 
     ready = await transcode.start()
     if not ready:
@@ -158,17 +192,18 @@ async def manage_transcoder_pause(
     _, last = await HlsTranscoder.first_last_transcoded_segment(folder)
     if last < 0:
         return
-    ahead = last - current_segment
+    ahead_segments = max(0, last - current_segment)
+    ahead_seconds = ahead_segments * session_model.segment_time
     runner = session_model.ffmpeg_runner
-    if not runner.paused and ahead >= config.ffmpeg_pause_threshold_seconds:
+    if not runner.paused and ahead_seconds >= config.ffmpeg_pause_threshold_seconds:
         runner.pause()
         logger.info(
             f'[{session_key}] Paused transcoder '
-            f'({ahead} segments ahead of {current_segment})'
+            f'({ahead_seconds}s ahead of segment {current_segment})'
         )
-    elif runner.paused and ahead < config.ffmpeg_resume_threshold_seconds:
+    elif runner.paused and ahead_seconds < config.ffmpeg_resume_threshold_seconds:
         runner.resume()
         logger.info(
             f'[{session_key}] Resumed transcoder '
-            f'({ahead} segments ahead of {current_segment})'
+            f'({ahead_seconds}s ahead of segment {current_segment})'
         )

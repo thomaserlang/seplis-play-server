@@ -1,8 +1,10 @@
 from uuid import uuid4
 
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
+from seplis_play.schemas.source_schemas import SourceStream
 from seplis_play.transcoding.base_transcoder import (
     BaseTranscoder,
+    stream_by_lang,
     summarize_transcode_decision,
 )
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
@@ -97,3 +99,14 @@ def test_client_audio_track_switch_unsupported() -> None:
     assert transcoder.direct_play_decision.supported is True, (
         summarize_transcode_decision(transcoder.transcode_decision)
     )
+
+
+def test_stream_by_lang_honors_group_index_zero() -> None:
+    streams = [
+        SourceStream(title='Second', language='eng', index=2, codec='aac', group_index=1),
+        SourceStream(title='First', language='eng', index=1, codec='aac', group_index=0),
+    ]
+
+    selected = stream_by_lang(streams, 'eng:0')
+
+    assert selected is streams[1]

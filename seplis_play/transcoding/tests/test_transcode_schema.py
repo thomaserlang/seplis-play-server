@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import RootModel
@@ -90,6 +91,35 @@ def test_transcode_settings_list_fields_accept_comma_separated_query_params() ->
     assert response.json()['supported_audio_codecs'] == ['aac', 'opus']
     assert response.json()['supported_video_containers'] == ['mp4', 'webm']
     assert response.json()['supported_video_codecs'] == ['h264', 'av1']
+
+
+@pytest.mark.parametrize('codec', ['aac', 'opus', 'flac', 'mp3'])
+def test_transcode_settings_accept_supported_audio_encoders(codec: str) -> None:
+    response = _create_client().get(
+        '/transcode',
+        params={
+            'play_id': 'play-id',
+            'session': 'a' * 32,
+            'transcode_audio_codec': codec,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['transcode_audio_codec'] == codec
+
+
+@pytest.mark.parametrize('codec', ['ac3', 'eac3', 'ac4', 'dts'])
+def test_transcode_settings_rejects_unsupported_audio_encoders(codec: str) -> None:
+    response = _create_client().get(
+        '/transcode',
+        params={
+            'play_id': 'play-id',
+            'session': 'a' * 32,
+            'transcode_audio_codec': codec,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_transcode_settings_include_subtitles_defaults_to_false_and_can_be_enabled() -> (

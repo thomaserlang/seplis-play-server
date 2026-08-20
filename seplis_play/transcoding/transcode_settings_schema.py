@@ -48,7 +48,7 @@ class TranscodeSettings:
     source_index: int = 0
     format: Literal['hls'] = 'hls'
     transcode_video_codec: Literal['h264', 'hevc', 'av1'] = 'h264'
-    transcode_audio_codec: Literal['aac', 'opus', 'dts', 'flac', 'mp3'] = 'aac'
+    transcode_audio_codec: Literal['aac', 'opus', 'flac', 'mp3'] = 'aac'
 
     start_time: Annotated[Decimal, Query()] = Decimal(0)
     start_segment: int | None = None

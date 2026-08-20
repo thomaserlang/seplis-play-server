@@ -4,6 +4,7 @@ import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from weakref import WeakValueDictionary
 
 from loguru import logger
 from pydantic import (
@@ -47,6 +48,7 @@ class SessionModel:
     call_later: asyncio.TimerHandle
     transcode_folder: str | None = None
     segment_time: int = 0
+    start_segment: int = 0
     transcode_decision: TranscodeDecision | None = None
 
     model_config = ConfigDict(
@@ -55,6 +57,16 @@ class SessionModel:
 
 
 sessions: dict[str, SessionModel] = {}
+session_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+
+
+def get_session_lock(session: str) -> asyncio.Lock:
+    lock = session_locks.get(session)
+    if lock is None:
+        lock = asyncio.Lock()
+        session_locks[session] = lock
+    return lock
+
 
 codecs_to_library = {
     'h264': 'libx264',
@@ -63,7 +75,6 @@ codecs_to_library = {
     'vp9': 'libvpx-vp9',
     'opus': 'libopus',
     'aac': 'libfdk_aac',
-    'dts': 'dca',
     'flac': 'flac',
     'mp3': 'libmp3lame',
 }
@@ -170,9 +181,15 @@ class BaseTranscoder:
             logger.info(f'[{self.settings.session}] Reregistered')
             sessions[self.settings.session].ffmpeg_runner = self.ffmpeg_runner
             sessions[self.settings.session].transcode_decision = self.transcode_decision
+            sessions[self.settings.session].start_segment = (
+                self.settings.start_segment or 0
+            )
             sessions[self.settings.session].call_later.cancel()
             sessions[self.settings.session].call_later = loop.call_later(
-                config.session_timeout, close_session_callback, self.settings.session
+                config.session_timeout,
+                close_session_callback,
+                self.settings.session,
+                self.ffmpeg_runner,
             )
         else:
             logger.info(f'[{self.settings.session}] Registered')
@@ -183,8 +200,10 @@ class BaseTranscoder:
                     config.session_timeout,
                     close_session_callback,
                     self.settings.session,
+                    self.ffmpeg_runner,
                 ),
                 transcode_decision=self.transcode_decision,
+                start_segment=self.settings.start_segment or 0,
             )
 
     async def set_ffmpeg_args(self) -> None:
@@ -1006,7 +1025,7 @@ def stream_by_lang(streams: list[SourceStream], lang: str | None) -> SourceStrea
             continue
         langs.append(stream.language)
         if (
-            not group_index or stream.group_index == group_index
+            group_index is None or stream.group_index == group_index
         ) and stream.language.lower() == lang.lower():
             return stream
     logger.warning(f'Found no stream with language: {lang}')
@@ -1014,14 +1033,28 @@ def stream_by_lang(streams: list[SourceStream], lang: str | None) -> SourceStrea
     return None
 
 
-def close_session_callback(session: str) -> None:
+def close_session_callback(session: str, runner: FFmpegRunner) -> None:
     logger.debug(f'[{session}] Session timeout reached')
-    _ = asyncio.create_task(close_session(session))
+    _ = asyncio.create_task(close_session(session, expected_runner=runner))
 
 
-async def close_session(session: str) -> None:
+async def close_session(
+    session: str,
+    expected_runner: FFmpegRunner | None = None,
+) -> None:
+    async with get_session_lock(session):
+        await _close_session(session, expected_runner)
+
+
+async def _close_session(
+    session: str,
+    expected_runner: FFmpegRunner | None,
+) -> None:
     if session not in sessions:
         logger.info(f'[{session}] Already closed')
+        return
+    if expected_runner and sessions[session].ffmpeg_runner is not expected_runner:
+        logger.debug(f'[{session}] Ignoring stale session timeout')
         return
     logger.info(f'[{session}] Closing')
     await close_transcoder(session)

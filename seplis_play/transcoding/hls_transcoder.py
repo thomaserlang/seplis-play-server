@@ -2,7 +2,7 @@ import asyncio
 import math
 import os
 import re
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from urllib.parse import urlencode
 
 import iso639
@@ -14,13 +14,14 @@ from seplis_play.schemas.source_metadata_schemas import (
     SourceMetadata,
 )
 from seplis_play.schemas.source_schemas import SourceStream
-from seplis_play.transcoding.tests.test_transcode_schema import TranscodeSettings
+from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 from . import base_transcoder
 
 
 class HlsTranscoder(base_transcoder.BaseTranscoder):
     MEDIA_NAME: str = 'media.m3u8'
+    SEGMENT_TIMESTAMP_PRECISION = Decimal('0.000001')
     CODECES = ('h264', 'hevc', 'av1')
     HDR_CODECS = ('hevc', 'av1')
     HEVC_MAIN_TIER_MAX_BITRATES = {
@@ -33,6 +34,17 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         183: 120_000_000,
         186: 240_000_000,
     }
+    FIXED_GOP_ENCODERS = (
+        'h264_qsv',
+        'h264_nvenc',
+        'h264_amf',
+        'hevc_qsv',
+        'hevc_nvenc',
+        'av1_qsv',
+        'av1_nvenc',
+        'av1_amf',
+        'libsvtav1',
+    )
 
     def __init__(self, settings: TranscodeSettings, metadata: SourceMetadata) -> None:
         if settings.transcode_video_codec not in self.CODECES:
@@ -61,6 +73,7 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
                 {'-f': 'hls'},
                 {'-hls_playlist_type': 'event'},
                 {'-hls_segment_type': 'fmp4'},
+                {'-hls_fmp4_init_filename': self.get_init_filename()},
                 {'-hls_time': str(self.segment_time())},
                 {'-hls_list_size': '0'},
                 # Keep audio priming timestamps in tfdt and prevent sidx from
@@ -78,6 +91,13 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
                 self.ffmpeg_args.append({'-bsf:v': 'hevc_mp4toannexb'})
 
         self.ffmpeg_args.append({self.media_path: None})
+
+    def get_init_filename(self) -> str:
+        start_segment = self.settings.start_segment or 0
+        initial_init = os.path.join(self.transcode_folder, 'init.mp4')
+        if start_segment > 0 and os.path.isfile(initial_init):
+            return f'init-{start_segment}.mp4'
+        return 'init.mp4'
 
     @property
     def media_path(self) -> str:
@@ -139,10 +159,13 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         playlist.append('#EXTM3U')
         playlist.append('#EXT-X-VERSION:7')
         playlist.append('#EXT-X-PLAYLIST-TYPE:VOD')
-        playlist.append(
-            f'#EXT-X-TARGETDURATION:'
-            f'{round(max(segments)) if len(segments) > 0 else str(self.segment_time())}'
-        )
+        target_duration = self.segment_time()
+        if segments:
+            target_duration = max(
+                1,
+                int(max(segments).to_integral_value(rounding=ROUND_HALF_UP)),
+            )
+        playlist.append(f'#EXT-X-TARGETDURATION:{target_duration}')
         playlist.append('#EXT-X-MEDIA-SEQUENCE:0')
         playlist.append(f'#EXT-X-MAP:URI="/hls/init.mp4?{url_settings}"')
 
@@ -234,9 +257,10 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
 
     def get_stream_info_string(self) -> str:
         info = []
-        video_bitrate = self.get_video_bitrate()
-        info.append(f'AVERAGE-BANDWIDTH={video_bitrate}')
-        info.append(f'BANDWIDTH={video_bitrate}')
+        average_bandwidth = self.get_average_bandwidth()
+        peak_bandwidth = math.ceil(average_bandwidth * 1.05)
+        info.append(f'AVERAGE-BANDWIDTH={average_bandwidth}')
+        info.append(f'BANDWIDTH={peak_bandwidth}')
         info.append(f'VIDEO-RANGE={self.get_video_range()}')
         codecs = self.get_codecs_string()
         if codecs:
@@ -266,14 +290,15 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
     def get_segments(self) -> list[Decimal]:
         if self.can_copy_video:
             return self.calculate_keyframe_segments()
-        return self.calculate_equal_segments()
+        return self.calculate_transcoded_segments()
 
     def calculate_keyframe_segments(self) -> list[Decimal]:
         result: list[Decimal] = []
         target_duration = Decimal(self.segment_time())
         keyframes = [Decimal(t) for t in (self.metadata.get('keyframes') or [])]
-        break_time = target_duration
-        prev_keyframe = Decimal(0)
+        timeline_origin = keyframes[0] if keyframes else Decimal(0)
+        break_time = timeline_origin + target_duration
+        prev_keyframe = timeline_origin
         for keyframe in keyframes:
             if keyframe >= break_time:
                 result.append(keyframe - prev_keyframe)
@@ -282,25 +307,75 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         result.append(self.source.duration - prev_keyframe)
         return result
 
-    def calculate_equal_segments(self) -> list[Decimal]:
+    def calculate_transcoded_segments(self) -> list[Decimal]:
         target_duration = Decimal(self.segment_time())
-        segments = self.source.duration / target_duration
-        left_over = self.source.duration % target_duration
-        result = [target_duration for _ in range(int(segments))]
-        if left_over:
-            result.append(left_over)
+        duration = self.source.duration
+        frame_rate = self.get_frame_rate_decimal()
+        if duration <= 0:
+            return []
+        if frame_rate <= 0:
+            segment_count = int(duration // target_duration)
+            result = [target_duration for _ in range(segment_count)]
+            left_over = duration % target_duration
+            if left_over:
+                result.append(left_over)
+            return result
+
+        codec_lib = self.get_expected_video_encoder()
+        fixed_gop_frames = math.ceil(target_duration * frame_rate)
+        result = []
+        previous_boundary = Decimal(0)
+        segment = 1
+        while True:
+            if codec_lib in self.FIXED_GOP_ENCODERS:
+                boundary = Decimal(segment * fixed_gop_frames) / frame_rate
+            else:
+                target = Decimal(segment) * target_duration * frame_rate
+                boundary = target.to_integral_value(rounding=ROUND_CEILING) / frame_rate
+            boundary = boundary.quantize(self.SEGMENT_TIMESTAMP_PRECISION)
+            if boundary >= duration:
+                result.append(
+                    (duration - previous_boundary).quantize(
+                        self.SEGMENT_TIMESTAMP_PRECISION
+                    )
+                )
+                break
+            result.append(
+                (boundary - previous_boundary).quantize(self.SEGMENT_TIMESTAMP_PRECISION)
+            )
+            previous_boundary = boundary
+            segment += 1
         return result
+
+    def get_expected_video_encoder(self) -> str:
+        if self.can_copy_video:
+            return 'copy'
+        if base_transcoder.config.ffmpeg_hwaccel_enabled:
+            return (
+                f'{self.settings.transcode_video_codec}_'
+                f'{base_transcoder.config.ffmpeg_hwaccel}'
+            )
+        return base_transcoder.codecs_to_library.get(
+            self.settings.transcode_video_codec,
+            self.settings.transcode_video_codec,
+        )
 
     def start_time_from_segment(self, segment: int) -> Decimal:
         segments = self.get_segments()
-        r = Decimal(sum(segments[:segment]))
-        if self.can_copy_video:
-            # It seems that sending ffmpeg the precise start time of
-            # the keyframe often results in it starting a few seconds before.
-            # Adding 0.5 seconds seems to fix this most of the time,
-            # tried with 0.1 and 0.3 which seemed to work less often.
-            r += Decimal(0.5)
-        return r
+        boundary = Decimal(sum(segments[:segment]))
+        if not self.can_copy_video or segment == 0:
+            return boundary
+
+        keyframes = sorted(Decimal(t) for t in (self.metadata.get('keyframes') or []))
+        source_boundary = boundary + (keyframes[0] if keyframes else Decimal(0))
+        next_keyframe = next((time for time in keyframes if time > source_boundary), None)
+        if next_keyframe is None:
+            return source_boundary
+
+        # Probe inside the selected GOP so Matroska seeks to its opening keyframe.
+        return source_boundary + min(
+            Decimal('0.5'), (next_keyframe - source_boundary) / 2
+        )
 
     def start_segment_from_start_time(self, start_time: Decimal) -> int:
         if start_time <= 0:
@@ -309,9 +384,9 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         time = Decimal(0)
         for i, t in enumerate(segments):
             time += t
-            if time >= start_time:
+            if time > start_time:
                 return i
-        return 0
+        return max(0, len(segments) - 1)
 
     def keyframe_params(self) -> list[dict[str, str | None]]:
         if self.video_output_codec_lib == 'copy':
@@ -336,17 +411,7 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
 
         # Jellyfin: Unable to force key frames using these encoders,
         # set key frames by GOP.
-        if self.video_output_codec_lib in (
-            'h264_qsv',
-            'h264_nvenc',
-            'h264_amf',
-            'hevc_qsv',
-            'hevc_nvenc',
-            'av1_qsv',
-            'av1_nvenc',
-            'av1_amf',
-            'libsvtav1',
-        ):
+        if self.video_output_codec_lib in self.FIXED_GOP_ENCODERS:
             args.extend(go_args)
         elif self.video_output_codec_lib in (
             'libx264',
@@ -411,9 +476,9 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         if self.audio_output_codec == 'aac':
             return self.get_aac_codec_string('')
         if self.audio_output_codec == 'ac3':
-            return 'mp4a.a5'
+            return 'ac-3'
         if self.audio_output_codec == 'eac3':
-            return 'mp4a.a6'
+            return 'ec-3'
         if self.audio_output_codec == 'opus':
             return 'Opus'
         if self.audio_output_codec == 'flac':
@@ -421,6 +486,20 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
         if self.audio_output_codec == 'mp3':
             return 'mp4a.40.34'
         return ''
+
+    def get_average_bandwidth(self) -> int:
+        if self.can_copy_video:
+            return self.source.bitrate
+        return self.get_video_bitrate() + self.get_audio_bitrate()
+
+    def get_audio_bitrate(self) -> int:
+        source_channels = self.audio_stream.channels or 2
+        if (
+            self.settings.max_audio_channels
+            and self.settings.max_audio_channels < source_channels
+        ):
+            return self.settings.max_audio_channels * 128_000
+        return self.audio_stream.bitrate or source_channels * 128_000
 
     def get_h264_codec_string(self, profile: str, level: int) -> str:
         r = 'avc1'

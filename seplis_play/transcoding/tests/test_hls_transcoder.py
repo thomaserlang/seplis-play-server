@@ -1,4 +1,6 @@
 import asyncio
+from decimal import Decimal
+from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
@@ -496,7 +498,7 @@ def test_hls_stream_info_uses_shared_output_resolution_and_codecs() -> None:
     assert transcoder.get_output_resolution() == (1280, 720)
     assert (
         transcoder.get_stream_info_string()
-        == 'AVERAGE-BANDWIDTH=5000000,BANDWIDTH=5000000,VIDEO-RANGE=SDR,'
+        == 'AVERAGE-BANDWIDTH=5256000,BANDWIDTH=5518800,VIDEO-RANGE=SDR,'
         'CODECS="avc1,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=23.976'
     )
 
@@ -606,7 +608,7 @@ def test_hls_hevc_hdr10_stream_info_uses_main10_tier_and_pq() -> None:
     assert transcoder.get_video_range() == 'PQ'
     assert (
         transcoder.get_stream_info_string()
-        == 'AVERAGE-BANDWIDTH=2500000,BANDWIDTH=2500000,VIDEO-RANGE=PQ,'
+        == 'AVERAGE-BANDWIDTH=2500000,BANDWIDTH=2625000,VIDEO-RANGE=PQ,'
         'CODECS="hvc1.2.4.H150.B0,mp4a.40.2",RESOLUTION=3840x2160,'
         'FRAME-RATE=23.976'
     )
@@ -660,9 +662,7 @@ def test_hls_hevc_stream_info_infers_high_tier_from_bitrate() -> None:
 
     transcoder = HlsTranscoder(settings, metadata)
 
-    assert 'CODECS="hvc1.2.4.H150.B0,mp4a.40.2"' in (
-        transcoder.get_stream_info_string()
-    )
+    assert 'CODECS="hvc1.2.4.H150.B0,mp4a.40.2"' in (transcoder.get_stream_info_string())
 
 
 def test_hls_hevc_hdr10_transcode_uses_jellyfin_compatible_sdr_main_profile() -> None:
@@ -723,10 +723,132 @@ def test_hls_hevc_hdr10_transcode_uses_jellyfin_compatible_sdr_main_profile() ->
     assert transcoder.get_video_range() == 'SDR'
     assert (
         transcoder.get_stream_info_string()
-        == 'AVERAGE-BANDWIDTH=10000000,BANDWIDTH=10000000,VIDEO-RANGE=SDR,'
+        == 'AVERAGE-BANDWIDTH=10256000,BANDWIDTH=10768800,VIDEO-RANGE=SDR,'
         'CODECS="hvc1.1.4.L150.B0,mp4a.40.2",RESOLUTION=3840x2160,'
         'FRAME-RATE=23.976'
     )
+
+
+def make_hls_metadata(
+    *,
+    video_codec: str = 'h264',
+    audio_codec: str = 'aac',
+    duration: str = '15.015',
+    keyframes: list[str] | None = None,
+) -> SourceMetadata:
+    return {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': video_codec,
+                'codec_type': 'video',
+                'profile': 'High',
+                'level': 40,
+                'codec_tag_string': 'avc1',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p',
+                'r_frame_rate': '24000/1001',
+            },
+            {
+                'index': 1,
+                'codec_name': audio_codec,
+                'codec_type': 'audio',
+                'sample_rate': '48000',
+                'channels': 2,
+                'disposition': {'default': 1},
+            },
+        ],
+        'format': {
+            'format_name': 'matroska,webm',
+            'filename': '/tmp/movie.mkv',
+            'duration': duration,
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': keyframes or ['0.000000', '6.006000', '12.012000'],
+    }
+
+
+def make_hls_settings(
+    *,
+    video_codec: str = 'h264',
+    audio_codec: str = 'aac',
+    max_width: int | None = None,
+) -> TranscodeSettings:
+    return TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_video_containers=['mp4'],
+        supported_video_codecs=[video_codec],
+        supported_audio_codecs=[audio_codec],
+        max_width=max_width,
+    )
+
+
+def test_transcoded_segments_follow_the_output_frame_grid() -> None:
+    transcoder = HlsTranscoder(
+        make_hls_settings(max_width=1280),
+        make_hls_metadata(),
+    )
+
+    segments = transcoder.get_segments()
+
+    assert segments == [Decimal('3.003')] * 5
+    assert '#EXTINF:3.003000,' in transcoder.generate_media_playlist()
+
+
+def test_copy_seek_probe_stays_inside_a_short_gop() -> None:
+    transcoder = HlsTranscoder(
+        make_hls_settings(),
+        make_hls_metadata(
+            duration='18.000',
+            keyframes=['0.000', '6.000', '6.200', '12.000'],
+        ),
+    )
+
+    assert transcoder.start_time_from_segment(1) == Decimal('6.100')
+    assert transcoder.start_segment_from_start_time(Decimal('6.000')) == 1
+
+
+def test_copy_segments_normalize_a_nonzero_video_start_timestamp() -> None:
+    transcoder = HlsTranscoder(
+        make_hls_settings(),
+        make_hls_metadata(
+            duration='30.051',
+            keyframes=['0.021', '6.027', '12.033', '18.039', '24.045'],
+        ),
+    )
+
+    assert transcoder.get_segments()[:4] == [Decimal('6.006')] * 4
+    assert transcoder.start_time_from_segment(3) == Decimal('18.539')
+
+
+def test_restart_keeps_the_original_init_segment(tmp_path: Path) -> None:
+    transcoder = HlsTranscoder(make_hls_settings(), make_hls_metadata())
+    transcoder.transcode_folder = str(tmp_path)
+    transcoder.settings.start_segment = 2
+    (tmp_path / 'init.mp4').touch()
+
+    asyncio.run(transcoder.set_ffmpeg_args())
+
+    assert transcoder.find_ffmpeg_arg('-hls_fmp4_init_filename') == 'init-2.mp4'
+
+
+@pytest.mark.parametrize(
+    ('audio_codec', 'codec_string'),
+    [('ac3', 'ac-3'), ('eac3', 'ec-3')],
+)
+def test_hls_uses_apple_dolby_codec_identifiers(
+    audio_codec: str,
+    codec_string: str,
+) -> None:
+    transcoder = HlsTranscoder(
+        make_hls_settings(audio_codec=audio_codec),
+        make_hls_metadata(audio_codec=audio_codec),
+    )
+
+    assert transcoder.get_audio_codec_string() == codec_string
 
 
 if __name__ == '__main__':
