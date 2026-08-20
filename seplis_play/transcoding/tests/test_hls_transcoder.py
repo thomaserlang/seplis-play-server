@@ -95,7 +95,14 @@ def test_hls() -> None:
         },
     )
 
-    HlsTranscoder(settings, metadata)
+    transcoder = HlsTranscoder(settings, metadata)
+
+    asyncio.run(transcoder.set_ffmpeg_args())
+
+    assert (
+        transcoder.find_ffmpeg_arg('-hls_segment_options')
+        == 'movflags=+frag_discont+skip_sidx'
+    )
 
 
 def test_hls_main_playlist_does_not_include_subtitles_by_default(

@@ -63,7 +63,9 @@ class HlsTranscoder(base_transcoder.BaseTranscoder):
                 {'-hls_segment_type': 'fmp4'},
                 {'-hls_time': str(self.segment_time())},
                 {'-hls_list_size': '0'},
-                {'-hls_segment_options': 'movflags=+frag_discont'},
+                # Keep audio priming timestamps in tfdt and prevent sidx from
+                # rewriting video PTS at open-GOP fragment boundaries.
+                {'-hls_segment_options': ('movflags=+frag_discont+skip_sidx')},
                 {'-start_number': str(self.settings.start_segment or 0)},
                 {'-y': None},
             ]
