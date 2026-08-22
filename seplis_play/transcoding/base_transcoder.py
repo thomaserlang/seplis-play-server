@@ -35,6 +35,7 @@ from seplis_play.transcoding.transcode_decision_schema import (
     format_blocker,
 )
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
+from seplis_play.utils.browser_media_types_utils import get_container_name
 
 
 class VideoColor(BaseModel):
@@ -100,6 +101,7 @@ class BaseTranscoder:
         self.audio_input_codec = self.audio_stream.codec or ''
         self.video_color = get_video_color(self.video_stream)
         self.video_color_bit_depth = get_video_color_bit_depth(self.video_stream)
+        self.hardware_decode_enabled = False
         self.video_copy_decision = self.evaluate_can_copy_video()
         self.can_copy_video = self.video_copy_decision.supported
         self.audio_copy_decision = self.evaluate_can_copy_audio()
@@ -114,7 +116,7 @@ class BaseTranscoder:
         )
         self.audio_output_codec = (
             self.audio_input_codec
-            if self.can_copy_audio
+            if self.can_copy_video and self.can_copy_audio
             else self.settings.transcode_audio_codec
         )
         self.configure_output_compatibility()
@@ -228,16 +230,30 @@ class BaseTranscoder:
             return
 
         if config.ffmpeg_hwaccel == 'qsv':
+            # Intel QSV/VAAPI cannot decode Hi10P AVC. Decode it in software,
+            # then upload converted frames through the VAAPI device.
+            self.hardware_decode_enabled = not (
+                self.video_input_codec == 'h264' and self.video_color_bit_depth > 8
+            )
             self.ffmpeg_args.extend(
                 [
                     {'-init_hw_device': f'vaapi=va:{config.ffmpeg_hwaccel_device}'},
                     {'-init_hw_device': 'qsv=qs@va'},
-                    {'-filter_hw_device': 'qs'},
-                    {'-hwaccel': 'vaapi'},
-                    {'-hwaccel_output_format': 'vaapi'},
-                    {'-noautorotate': None},
+                    {
+                        '-filter_hw_device': (
+                            'qs' if self.hardware_decode_enabled else 'va'
+                        )
+                    },
                 ]
             )
+            if self.hardware_decode_enabled:
+                self.ffmpeg_args.extend(
+                    [
+                        {'-hwaccel': 'vaapi'},
+                        {'-hwaccel_output_format': 'vaapi'},
+                        {'-noautorotate': None},
+                    ]
+                )
         else:
             raise NotImplementedError(
                 f'Unsupported hwaccel: {config.ffmpeg_hwaccel} '
@@ -471,17 +487,15 @@ class BaseTranscoder:
                 blockers=self.audio_copy_decision.blockers,
             )
 
-        if not any(
-            fmt in self.settings.supported_video_containers
-            for fmt in self.metadata['format']['format_name'].split(',')
-        ):
+        container = get_container_name(self.metadata)
+        if container not in self.settings.supported_video_containers:
             return DecisionCheck(
                 supported=False,
                 blockers=[
                     DecisionBlocker(
                         code=BlockerCode.UNSUPPORTED_CONTAINER,
                         scope=DecisionScope.CONTAINER,
-                        actual=self.metadata['format']['format_name'],
+                        actual=container or self.metadata['format']['format_name'],
                     )
                 ],
             )
@@ -606,6 +620,10 @@ class BaseTranscoder:
             # missing software tonemap
             return None
 
+        if not self.hardware_decode_enabled:
+            upload_format = 'p010le' if pix_fmt == 'yuv420p10le' else 'nv12'
+            vf.extend([f'format={upload_format}', 'hwupload=extra_hw_frames=24'])
+
         if pix_fmt == 'yuv420p10le':
             if self.video_output_codec_lib == 'h264_qsv':
                 pix_fmt = 'yuv420p'
@@ -677,8 +695,8 @@ class BaseTranscoder:
 
     def get_quality_params(
         self, width: int, output_codec: str
-    ) -> list[Mapping[str, str]]:
-        params = []
+    ) -> list[Mapping[str, str | int | float]]:
+        params: list[Mapping[str, str | int | float]] = []
         params.append({'-preset': config.ffmpeg_preset})
         match output_codec:
             case 'libx264':
@@ -730,14 +748,11 @@ class BaseTranscoder:
         return params
 
     def set_audio(self) -> None:
-        codec = codecs_to_library.get(self.audio_stream.codec or '', '')
-
         # Audio goes out of sync if audio copy is used while the video is being transcoded
         if self.can_copy_video and self.can_copy_audio:
             codec = 'copy'
         else:
-            if not codec or codec not in self.settings.supported_audio_codecs:
-                codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
+            codec = codecs_to_library.get(self.settings.transcode_audio_codec, '')
             audio_channels = self.audio_stream.channels or 2
             bitrate = self.audio_stream.bitrate or audio_channels * 128000
             if (
@@ -813,7 +828,7 @@ class BaseTranscoder:
             ]
 
         if codec_library in ('h264_qsv', 'hevc_qsv', 'av1_qsv'):
-            params = []
+            params: list[Mapping[str, str | int | float]] = []
             if codec_library in ('h264_qsv', 'hevc_qsv'):
                 params.append({'-mbbrc': 1})
             max_int = 2**31 - 1

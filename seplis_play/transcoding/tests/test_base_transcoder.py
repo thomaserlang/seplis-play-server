@@ -110,3 +110,47 @@ def test_stream_by_lang_honors_group_index_zero() -> None:
     selected = stream_by_lang(streams, 'eng:0')
 
     assert selected is streams[1]
+
+
+def test_matroska_is_not_treated_as_webm_for_direct_play() -> None:
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        supported_video_containers=['webm'],
+        supported_video_codecs=['h264'],
+        supported_audio_codecs=['aac'],
+    )
+    metadata: SourceMetadata = {
+        'streams': [
+            {
+                'index': 0,
+                'codec_name': 'h264',
+                'codec_type': 'video',
+                'width': 1920,
+                'height': 1080,
+                'pix_fmt': 'yuv420p',
+            },
+            {
+                'index': 1,
+                'codec_name': 'aac',
+                'codec_type': 'audio',
+                'channels': 2,
+            },
+        ],
+        'format': {
+            'filename': '/tmp/movie.mkv',
+            'format_name': 'matroska,webm',
+            'duration': '120',
+            'size': '1000000',
+            'bit_rate': '2500000',
+        },
+        'keyframes': ['0.000000', '6.000000'],
+    }
+
+    transcoder = BaseTranscoder(settings, metadata)
+
+    assert transcoder.direct_play_decision.supported is False
+    blocker = transcoder.direct_play_decision.blockers[0]
+    assert blocker.code == 'unsupported_container'
+    assert blocker.actual == 'matroska'

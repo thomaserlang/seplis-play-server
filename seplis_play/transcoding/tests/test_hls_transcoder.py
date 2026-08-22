@@ -7,7 +7,10 @@ from uuid import uuid4
 import pytest
 
 from seplis_play import config
-from seplis_play.schemas.source_metadata_schemas import SourceMetadata
+from seplis_play.schemas.source_metadata_schemas import (
+    SourceMetadata,
+    SourceMetadataVideoStream,
+)
 from seplis_play.testbase import run_file
 from seplis_play.transcoding.hls_transcoder import HlsTranscoder
 from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
@@ -395,6 +398,42 @@ def test_qsv_tonemap_filter_without_resize_has_valid_scale_expression(
     assert 'scale_vaapi=:extra_hw_frames=24' not in vf
 
 
+def test_qsv_high_10_h264_uses_software_decode_and_hardware_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, 'ffmpeg_hwaccel_enabled', True)
+    monkeypatch.setattr(config, 'ffmpeg_hwaccel', 'qsv')
+
+    settings = TranscodeSettings(
+        play_id='a',
+        session=uuid4().hex,
+        supported_hdr_formats=[],
+        force_transcode=True,
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264', 'hevc'],
+        supported_video_color_bit_depth=8,
+        supported_audio_codecs=['aac', 'flac'],
+        transcode_video_codec='hevc',
+        transcode_audio_codec='aac',
+    )
+    metadata = make_hls_metadata(video_codec='h264', audio_codec='flac')
+    video_stream = cast(SourceMetadataVideoStream, metadata['streams'][0])
+    video_stream['profile'] = 'High 10'
+    video_stream['pix_fmt'] = 'yuv420p10le'
+    transcoder = HlsTranscoder(settings, metadata)
+
+    asyncio.run(transcoder.set_ffmpeg_args())
+
+    assert transcoder.find_ffmpeg_arg('-hwaccel') is None
+    assert transcoder.find_ffmpeg_arg('-filter_hw_device') == 'va'
+    assert transcoder.find_ffmpeg_arg('-c:a') == 'libfdk_aac'
+    assert transcoder.audio_output_codec == 'aac'
+    assert transcoder.transcode_decision.audio.target_codec == 'aac'
+    vf = transcoder.find_ffmpeg_arg('-vf')
+    assert isinstance(vf, str)
+    assert 'format=nv12,hwupload=extra_hw_frames=24' in vf
+
+
 def test_hls_h264_only_does_not_expose_hdr() -> None:
     settings = TranscodeSettings(
         play_id='a',
@@ -779,6 +818,7 @@ def make_hls_settings(
     return TranscodeSettings(
         play_id='a',
         session=uuid4().hex,
+        supported_hdr_formats=[],
         supported_video_containers=['mp4'],
         supported_video_codecs=[video_codec],
         supported_audio_codecs=[audio_codec],

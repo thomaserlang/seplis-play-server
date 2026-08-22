@@ -15,7 +15,14 @@ from seplis_play.transcoding.transcode_settings_schema import TranscodeSettings
 
 
 def make_settings(session: str) -> TranscodeSettings:
-    return TranscodeSettings(play_id='play-id', session=session)
+    return TranscodeSettings(
+        play_id='play-id',
+        session=session,
+        supported_hdr_formats=[],
+        supported_audio_codecs=['aac'],
+        supported_video_containers=['mp4'],
+        supported_video_codecs=['h264'],
+    )
 
 
 @pytest.mark.asyncio
@@ -157,5 +164,7 @@ async def test_refresh_session_timeout_replaces_timer() -> None:
         assert sessions[session].timeout_generation == 2
         assert sessions[session].call_later is not old_timer
     finally:
-        sessions[session].call_later.cancel()
+        call_later = sessions[session].call_later
+        if call_later is not None:
+            call_later.cancel()
         sessions.pop(session, None)

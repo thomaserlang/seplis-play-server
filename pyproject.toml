@@ -18,7 +18,7 @@ dependencies = [
     "pyjwt>=2.8.0",
     "uvicorn>=0.29.0",
     "click>=8.1.7",
-    "httpx>=0.27.0",
+    "httpx2[http2]>=2.2.0",
     "respx>=0.21.1",
     "orjson>=3.10.3",
     "guessit>=3.8.0",
@@ -32,7 +32,8 @@ dependencies = [
 dev = [
     "pytest>=8.2.0",
     "pytest_asyncio>=0.23.7",
-    "ruff>=0.0.241",
+    "ruff>=0.15.12",
+    "ty>=0.0.49",
 ]
 
 [build-system]
@@ -48,6 +49,9 @@ quote-style = "single"
 [tool.ruff.lint]
 select = ["E", "F", "UP", "B", "I", "FAST", "ANN", "RET"]
 ignore = ['ANN401']
+
+[tool.ty.src]
+include = ["seplis_play"]
 
 
 [tool.pytest.ini_options]
