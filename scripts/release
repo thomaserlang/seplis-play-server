@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import fnmatch
 import subprocess
 from dataclasses import dataclass
 
@@ -29,8 +30,15 @@ from textual.widgets import (  # ty: ignore[unresolved-import]
 )
 
 
+@dataclass(frozen=True, slots=True)
+class Service:
+    name: str
+    paths: tuple[str, ...]
+
+
 @dataclass(slots=True)
-class ReleaseStatus:
+class ServiceStatus:
+    service: Service
     latest_tag: str | None
     changes: list[str]
     next_tag: str
@@ -46,7 +54,6 @@ class BranchSyncStatus:
     upstream: str | None
     ahead: int
     behind: int
-    dirty: bool
 
     @property
     def needs_push(self) -> bool:
@@ -55,6 +62,14 @@ class BranchSyncStatus:
     @property
     def needs_pull(self) -> bool:
         return self.behind > 0
+
+
+SERVICES = (
+    Service(
+        name='server',
+        paths=('**',),
+    ),
+)
 
 
 CSS = """
@@ -147,7 +162,6 @@ def fetch_tags() -> None:
 
 def branch_sync_status() -> BranchSyncStatus:
     branch = run_git('branch', '--show-current') or 'HEAD'
-    dirty = bool(run_git('status', '--porcelain'))
     upstream = run_git(
         'rev-parse',
         '--abbrev-ref',
@@ -156,13 +170,7 @@ def branch_sync_status() -> BranchSyncStatus:
         check=False,
     )
     if not upstream:
-        return BranchSyncStatus(
-            branch=branch,
-            upstream=None,
-            ahead=0,
-            behind=0,
-            dirty=dirty,
-        )
+        return BranchSyncStatus(branch=branch, upstream=None, ahead=0, behind=0)
 
     counts = run_git('rev-list', '--left-right', '--count', f'HEAD...{upstream}')
     ahead_text, behind_text = counts.split()
@@ -171,16 +179,12 @@ def branch_sync_status() -> BranchSyncStatus:
         upstream=upstream,
         ahead=int(ahead_text),
         behind=int(behind_text),
-        dirty=dirty,
     )
 
 
 def branch_sync_block_message(status: BranchSyncStatus) -> str | None:
     if status.branch != 'main':
         return f'Refusing release: current branch is {status.branch}, expected main.'
-
-    if status.dirty:
-        return 'Refusing release: the working tree has uncommitted changes.'
 
     if status.upstream is None:
         return f'Refusing release: {status.branch} has no upstream branch.'
@@ -200,7 +204,7 @@ def branch_sync_block_message(status: BranchSyncStatus) -> str | None:
     )
 
 
-def latest_release_tag() -> str | None:
+def latest_release_tag(service: Service) -> str | None:
     tags = run_git('tag', '--list', 'v*', '--sort=-version:refname')
     return tags.splitlines()[0] if tags else None
 
@@ -212,7 +216,21 @@ def changed_paths_since(tag: str | None) -> list[str]:
     return output.splitlines()
 
 
-def next_release_tag() -> str:
+def service_changes(service: Service) -> tuple[str | None, list[str]]:
+    tag = latest_release_tag(service)
+    changed_paths = changed_paths_since(tag)
+    if tag is None:
+        return tag, changed_paths
+
+    matches = [
+        path
+        for path in changed_paths
+        if any(fnmatch.fnmatchcase(path, pattern) for pattern in service.paths)
+    ]
+    return tag, matches
+
+
+def next_release_tag(service: Service) -> str:
     release_date = dt.date.today().strftime('%Y.%m.%d')
     base_tag = f'v{release_date}'
     tags = set(run_git('tag', '--list', f'{base_tag}*').splitlines())
@@ -229,16 +247,22 @@ def next_release_tag() -> str:
                 suffixes.append(int(suffix))
 
     next_patch = (max(suffixes) + 1) if suffixes else 1
-    return f'{base_tag}.{next_patch}'
+    return f'{base_tag}.{next_patch:02d}'
 
 
-def load_status() -> ReleaseStatus:
-    latest_tag = latest_release_tag()
-    return ReleaseStatus(
-        latest_tag=latest_tag,
-        changes=changed_paths_since(latest_tag),
-        next_tag=next_release_tag(),
-    )
+def load_statuses() -> list[ServiceStatus]:
+    statuses: list[ServiceStatus] = []
+    for service in SERVICES:
+        latest_tag, changes = service_changes(service)
+        statuses.append(
+            ServiceStatus(
+                service=service,
+                latest_tag=latest_tag,
+                changes=changes,
+                next_tag=next_release_tag(service),
+            )
+        )
+    return statuses
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -271,12 +295,14 @@ class ReleaseApp(App[None]):
         Binding('q', 'quit', 'Quit'),
         Binding('escape', 'quit', show=False),
         Binding('ctrl+c', 'quit', show=False),
+        Binding('space', 'toggle', 'Select'),
         Binding('r', 'release', 'Release'),
     ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.status: ReleaseStatus | None = None
+        self.statuses: list[ServiceStatus] = []
+        self.selected: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -285,25 +311,55 @@ class ReleaseApp(App[None]):
             with Horizontal(id='actions'):
                 yield Button('Release', variant='primary', id='release-button')
                 yield Static('', id='status')
-        yield Static('esc Quit   r Release', id='footer')
+        yield Static('esc Quit   space Select   r Release', id='footer')
 
     def on_mount(self) -> None:
         fetch_tags()
         self.reload()
 
     def reload(self) -> None:
-        self.status = load_status()
+        self.statuses = load_statuses()
+        self.selected = {
+            status.service.name for status in self.statuses if status.suggested
+        }
         table = self.query_one('#table', DataTable)
         table.clear(columns=True)
         table.cursor_type = 'row'
-        table.add_columns('Status', 'Changes', 'Latest tag', 'Next tag')
-        table.add_row(
-            'suggested' if self.status.suggested else 'no changes',
-            str(len(self.status.changes)),
-            self.status.latest_tag or '-',
-            self.status.next_tag,
-        )
+        table.add_columns('Sel', 'Service', 'Status', 'Latest tag', 'Next tag')
+
+        for status in self.statuses:
+            table.add_row(
+                self.marker(status.service.name),
+                status.service.name,
+                'suggested' if status.suggested else 'no changes',
+                status.latest_tag or '-',
+                status.next_tag,
+                key=status.service.name,
+            )
         table.focus()
+
+    def marker(self, service_name: str) -> str:
+        return '[green]✓[/]' if service_name in self.selected else ''
+
+    def current_status(self) -> ServiceStatus:
+        table = self.query_one('#table', DataTable)
+        return self.statuses[table.cursor_row]
+
+    def update_table_markers(self) -> None:
+        table = self.query_one('#table', DataTable)
+        for row_index, status in enumerate(self.statuses):
+            table.update_cell_at(
+                (row_index, 0),
+                self.marker(status.service.name),
+            )
+
+    def action_toggle(self) -> None:
+        status = self.current_status()
+        if status.service.name in self.selected:
+            self.selected.remove(status.service.name)
+        else:
+            self.selected.add(status.service.name)
+        self.update_table_markers()
 
     def action_release(self) -> None:
         fetch_tags()
@@ -312,40 +368,46 @@ class ReleaseApp(App[None]):
             self.query_one('#status', Static).update(block_message)
             return
 
-        self.reload()
-        assert self.status is not None
-        warning = (
-            '' if self.status.suggested else '\n\nNo changes since the last release.'
-        )
+        statuses = [
+            status for status in self.statuses if status.service.name in self.selected
+        ]
+        if not statuses:
+            self.query_one('#status', Static).update('No services selected.')
+            return
+
+        unchanged = [status.service.name for status in statuses if not status.suggested]
+        tags = [status.next_tag for status in statuses]
+        warning = ''
+        if unchanged:
+            warning = f'\n\nNo detected service changes: {", ".join(unchanged)}'
 
         self.push_screen(
             ConfirmScreen(
-                'Create and push tag?',
-                self.status.next_tag + warning,
+                'Create and push tags?',
+                '\n'.join(tags) + warning,
             ),
-            lambda confirmed: (
-                self.create_and_push_tag(self.status.next_tag) if confirmed else None
-            ),
+            lambda confirmed: self.create_and_push_tags(tags) if confirmed else None,
         )
 
     @on(Button.Pressed, '#release-button')
     def release_button_pressed(self) -> None:
         self.action_release()
 
-    def create_and_push_tag(self, tag: str) -> None:
+    def create_and_push_tags(self, tags: list[str]) -> None:
         try:
-            run_git('tag', tag)
-            subprocess.run(('git', 'push', 'origin', tag), check=True)
-            self.after_tag(tag)
+            for tag in tags:
+                run_git('tag', tag)
+            subprocess.run(('git', 'push', 'origin', *tags), check=True)
+            self.after_tag(tags)
         except subprocess.CalledProcessError as exc:
             self.query_one('#status', Static).update(
                 f'Command failed: git {" ".join(exc.cmd[1:])}'
             )
 
-    def after_tag(self, tag: str) -> None:
+    def after_tag(self, tags: list[str]) -> None:
         fetch_tags()
         self.reload()
-        self.query_one('#status', Static).update(f'Created and pushed: {tag}')
+        self.query_one('#status', Static).update(f'Created and pushed: {", ".join(tags)}')
 
 
 if __name__ == '__main__':
