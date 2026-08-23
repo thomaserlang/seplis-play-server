@@ -51,6 +51,8 @@ async def test_subtitles(play_db_test: Database) -> None:
             assert not r[0].default
             assert r[0].forced
             assert r[0].type == 'srt'
+            assert r[0].source_path is None
+            assert r[0].stream_index is None
             assert not r[0].sdh
 
             assert r[1].path == paths[1]

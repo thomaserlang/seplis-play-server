@@ -11,6 +11,8 @@ class MExternalSubtitle(SABase):
     path: Mapped[str] = mapped_column(sa.String(1000), nullable=False)
     type: Mapped[str] = mapped_column(sa.String(100), nullable=False)
     language: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    source_path: Mapped[str | None] = mapped_column(sa.String(400))
+    stream_index: Mapped[int | None] = mapped_column(sa.Integer)
     forced: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default='0')
     default: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default='0')
     sdh: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default='0')

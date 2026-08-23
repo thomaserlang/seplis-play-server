@@ -15,7 +15,7 @@ from seplis_play.testbase import run_file
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_movies(play_db_test: Database) -> None:
+async def test_movies(play_db_test: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     from seplis_play.scanners import MovieScan
 
     scanner = MovieScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
@@ -32,6 +32,11 @@ async def test_movies(play_db_test: Database) -> None:
                 'some': 'data',
             },
         )
+    )
+    mock_cache_subtitles = mock.AsyncMock()
+    monkeypatch.setattr(
+        'seplis_play.scanners.movie.movie_scan.cache_missing_subtitles',
+        mock_cache_subtitles,
     )
     cast(Any, scanner).get_file_modified_time = mock.MagicMock(
         return_value=datetime(2014, 11, 14, 21, 25, 58)
@@ -63,6 +68,7 @@ async def test_movies(play_db_test: Database) -> None:
         assert r
         assert r.path == 'Uncharted.mkv'
         assert r.meta_data == {'some': 'data'}
+        mock_cache_subtitles.assert_awaited_once()
 
     await scanner.delete_path('Uncharted.mkv')
     async with play_db_test.session() as session:

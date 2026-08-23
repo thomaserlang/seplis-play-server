@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
 from unittest import mock
 
@@ -87,10 +87,10 @@ async def test_series_id_lookup(play_db_test: Database) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_item(play_db_test: Database) -> None:
+async def test_save_item(play_db_test: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     scanner = EpisodeScan(scan_path='/', cleanup_mode=True, make_thumbnails=False)
     mock_get_file_modified_time = mock.MagicMock(
-        return_value=datetime(2014, 11, 14, 21, 25, 58)
+        return_value=datetime(2014, 11, 14, 21, 25, 58, tzinfo=UTC)
     )
     cast(Any, scanner).get_file_modified_time = mock_get_file_modified_time
     mock_get_metadata = mock.AsyncMock(
@@ -102,6 +102,11 @@ async def test_save_item(play_db_test: Database) -> None:
         )
     )
     cast(Any, scanner).get_metadata = mock_get_metadata
+    mock_cache_subtitles = mock.AsyncMock()
+    monkeypatch.setattr(
+        'seplis_play.scanners.episode.episode_scan.cache_missing_subtitles',
+        mock_cache_subtitles,
+    )
     episodes = []
     episodes.append(
         (
@@ -148,19 +153,27 @@ async def test_save_item(play_db_test: Database) -> None:
             mock.call('/ncis/ncis.4.mp4'),
         ]
     )
+    assert mock_cache_subtitles.await_count == 3
 
     mock_get_metadata.reset_mock()
-    for episode in episodes:
-        await scanner.save_item(episode[0], episode[1])
+    mock_cache_subtitles.reset_mock()
+    with mock.patch('os.path.exists', return_value=True):
+        for episode in episodes:
+            await scanner.save_item(episode[0], episode[1])
     mock_get_metadata.assert_has_calls([])
+    assert mock_cache_subtitles.await_count == 3
 
     mock_get_metadata.reset_mock()
-    mock_get_file_modified_time.return_value = datetime(2014, 11, 15, 21, 25, 58)
+    mock_cache_subtitles.reset_mock()
+    mock_get_file_modified_time.return_value = datetime(
+        2014, 11, 15, 21, 25, 58, tzinfo=UTC
+    )
     with mock.patch('os.path.exists') as mock_get_files:
         await scanner.save_item(episodes[1][0], episodes[1][1])
     mock_get_metadata.assert_has_calls(
         [mock.call('/ncis/ncis.2014-11-14.mp4')],
     )
+    mock_cache_subtitles.assert_awaited_once()
 
     async with play_db_test.session() as session:
         r = await session.scalars(sa.select(MEpisode))

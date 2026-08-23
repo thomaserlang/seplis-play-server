@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import StringConstraints
 
 from ..dependencies import get_metadata
+from ..scanners.subtitles.subtitle_cache import get_cached_subtitle
 from ..schemas.source_metadata_schemas import SourceMetadata
 from ..transcoding.subtitle_transcoder import (
     get_subtitle_file,
     get_subtitle_file_from_external,
+    offset_webvtt,
 )
 
 router = APIRouter()
@@ -26,9 +28,16 @@ async def download_subtitle_route(
     group_index = int(group_index)
     sub: str | None
     if group_index < 1000:
-        sub = await get_subtitle_file(
-            metadata=metadata, langKey=lang, offset=offset, output_format=output_format
-        )
+        sub = await get_cached_subtitle(metadata, lang, output_format)
+        if sub is not None and offset and output_format == 'webvtt':
+            sub = offset_webvtt(sub, offset)
+        if sub is None:
+            sub = await get_subtitle_file(
+                metadata=metadata,
+                langKey=lang,
+                offset=offset,
+                output_format=output_format,
+            )
     else:
         sub = await get_subtitle_file_from_external(
             id_=group_index - 1000,

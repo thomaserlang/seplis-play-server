@@ -3,7 +3,8 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, BaseModel
+from iso639 import Lang
+from pydantic import AnyHttpUrl, BaseModel, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -86,6 +87,24 @@ class ConfigModel(BaseSettings):
     media_types: list[str] = ['mp4', 'mkv', 'avi', 'mpg', 'm4v', 'm2ts']
     subtitle_types: list[str] = ['srt', 'vtt', 'ass']
     subtitle_external_default_language: str = 'en'
+    subtitle_cache_languages: list[str] | None = None
+
+    @field_validator('subtitle_cache_languages')
+    @classmethod
+    def normalize_subtitle_cache_languages(
+        cls, languages: list[str] | None
+    ) -> list[str] | None:
+        if languages is None:
+            return None
+        normalized: list[str] = []
+        for language in languages:
+            try:
+                normalized.append(Lang(language).pt3)
+            except Exception as error:
+                raise ValueError(
+                    f'Invalid subtitle cache language: {language}'
+                ) from error
+        return list(dict.fromkeys(normalized))
 
     ffmpeg_folder: Path = Path('/bin')
     ffmpeg_preset: Literal[

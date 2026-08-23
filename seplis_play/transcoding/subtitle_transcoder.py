@@ -13,7 +13,10 @@ from .base_transcoder import stream_by_lang, to_subprocess_arguments
 
 
 async def get_subtitle_file(
-    metadata: SourceMetadata, langKey: str, offset: int | float, output_format: str
+    metadata: SourceMetadata,
+    langKey: str,
+    offset: int | float,
+    output_format: str,
 ) -> str | None:
     if not langKey:
         return None
@@ -30,7 +33,7 @@ async def get_subtitle_file(
         {'-vn': None},
         {'-an': None},
         {'-c:s': output_format},
-        {'-map': f'0:s:{sub_index.group_index}'},
+        {'-map': f'0:{sub_index.index}'},
         {'-f': output_format},
         {'-': None},
     ]

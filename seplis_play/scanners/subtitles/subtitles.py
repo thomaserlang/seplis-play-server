@@ -14,6 +14,7 @@ async def get_external_subtitles(filename: str) -> list[SourceStream]:
         subtitles = await session.scalars(
             sa.select(MExternalSubtitle).where(
                 MExternalSubtitle.path.like(f'{filename}.%'),
+                MExternalSubtitle.source_path.is_(None),
             )
         )
         for r in subtitles:

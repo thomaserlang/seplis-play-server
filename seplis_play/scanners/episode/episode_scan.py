@@ -11,6 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from seplis_play import config, logger
 from seplis_play.client import client
 from seplis_play.database import database
+from seplis_play.scanners.subtitles.subtitle_cache import (
+    cache_missing_subtitles,
+    delete_cached_subtitles,
+)
 from seplis_play.schemas.page_cursor_schema import PageCursorResult
 
 from ..scan_base import PlayScan
@@ -98,7 +102,9 @@ class EpisodeScan(PlayScan):
                 item.series_id = ep.series_id
                 item.episode_number = ep.number
             modified_time = self.get_file_modified_time(path)
-            if not ep or (ep.modified_time != modified_time) or not ep.meta_data:
+            metadata = ep.meta_data if ep else None
+            media_changed = ep is not None and ep.modified_time != modified_time
+            if not ep or media_changed or not metadata:
                 if not ep:
                     if not item.series_id:
                         if not await self.episode_series_id_lookup(item, path):
@@ -108,6 +114,8 @@ class EpisodeScan(PlayScan):
                             return False
                 try:
                     metadata = await self.get_metadata(path)
+                    if media_changed:
+                        await delete_cached_subtitles(path, session)
 
                     if ep:
                         sql = (
@@ -147,6 +155,7 @@ class EpisodeScan(PlayScan):
                         f'[episode-{item.series_id}-{item.episode_number}] Saved {path}'
                     )
                 except Exception as e:
+                    metadata = None
                     logger.exception(
                         f'[episode-{item.series_id}-{item.episode_number}]: {str(e)}'
                     )
@@ -155,6 +164,11 @@ class EpisodeScan(PlayScan):
                     f'[episode-{item.series_id}-{item.episode_number}] Nothing changed '
                     f'for {path}'
                 )
+            if metadata is not None:
+                try:
+                    await cache_missing_subtitles(metadata)
+                except Exception as e:
+                    logger.exception(f'Failed to cache subtitles for {path}: {e}')
             if self.make_thumbnails:
                 asyncio.create_task(
                     self.thumbnails(
@@ -208,6 +222,7 @@ class EpisodeScan(PlayScan):
                 )
             )
             if episode:
+                await delete_cached_subtitles(path, session)
                 await session.execute(
                     sa.delete(MEpisode).where(
                         MEpisode.path == path,

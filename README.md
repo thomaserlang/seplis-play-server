@@ -3,6 +3,8 @@ Play server config:
 database: 'mysql+pymysql://user:password@mysql:3306/seplis_play'
 secret: <long random secret>
 transcode_folder: /play_temp
+# Omit to cache all embedded languages; use [] to disable extraction.
+subtitle_cache_languages: [eng, dan]
 server_id: <Id from seplis.net>
 api_url: https://api.seplis.net
 ffmpeg_hwaccel_enabled: true

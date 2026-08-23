@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 
 from seplis_play import client, config, database, logger
+from seplis_play.scanners.subtitles.subtitle_cache import delete_cached_subtitles
 
 from .movie_models import MMovie
 from .movie_schemas import PlayServerMovieCreate
@@ -26,6 +27,7 @@ async def cleanup_movies() -> None:
                 )
                 continue
             deleted_count += 1
+            await delete_cached_subtitles(m.path, session)
             await session.execute(
                 sa.delete(MMovie).where(
                     MMovie.movie_id == m.movie_id,

@@ -12,7 +12,10 @@ from seplis_play.client import client
 from seplis_play.database import database
 from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
 from seplis_play.scanners.movie.movie_schemas import PlayServerMovieCreate
-from seplis_play.schemas.source_metadata_schemas import SourceMetadata
+from seplis_play.scanners.subtitles.subtitle_cache import (
+    cache_missing_subtitles,
+    delete_cached_subtitles,
+)
 
 from ..scan_base import PlayScan
 
@@ -51,17 +54,21 @@ class MovieScan(PlayScan):
             )
             movie_id: int | None = movie.movie_id if movie else None
             modified_time: datetime | None = self.get_file_modified_time(path)
+            metadata = movie.meta_data if movie else None
+            media_changed = movie is not None and movie.modified_time != modified_time
 
-            if not movie or (movie.modified_time != modified_time) or not movie.meta_data:  # type: ignore[operator]
+            if not movie or media_changed or not metadata:
                 if not movie_id:
                     movie_id = await self.lookup(item)
                     if not movie_id:
                         logger.info(f'No movie found for {item} ({path})')
                         return False
                 try:
-                    metadata: SourceMetadata = await self.get_metadata(path)
+                    metadata = await self.get_metadata(path)
                     if not metadata:
                         return False
+                    if media_changed:
+                        await delete_cached_subtitles(path, session)
 
                     if movie:
                         sql = (
@@ -93,9 +100,15 @@ class MovieScan(PlayScan):
 
                     logger.info(f'[movie-{movie_id}] Saved {path}')
                 except Exception as e:
+                    metadata = None
                     logger.error(str(e))
             else:
                 logger.debug(f'[movie-{movie_id}] Nothing changed for {path}')
+            if metadata is not None:
+                try:
+                    await cache_missing_subtitles(metadata)
+                except Exception as e:
+                    logger.exception(f'Failed to cache subtitles for {path}: {e}')
             if self.make_thumbnails:
                 asyncio.create_task(self.thumbnails(f'movie-{movie_id}', path))
             return True
@@ -175,6 +188,7 @@ class MovieScan(PlayScan):
                 )
             )
             if movie_id:
+                await delete_cached_subtitles(path, session)
                 await session.execute(
                     sa.delete(MMovie).where(
                         MMovie.path == path,
