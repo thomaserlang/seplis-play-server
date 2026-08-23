@@ -92,7 +92,7 @@ def source_streams_from_metadata(
         tags = stream.get('tags')
         if stream['codec_type'] != codec_type:
             continue
-        if codec_type == 'subtitle' and stream['codec_name'] in (
+        if codec_type == 'subtitle' and stream.get('codec_name') in (
             'dvd_subtitle',
             'hdmv_pgs_subtitle',
         ):
