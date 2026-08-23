@@ -11,6 +11,7 @@ from seplis_play.database import Database
 from seplis_play.scanners.movie.movie_models import MMovie, MMovieIdLookup
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
+from seplis_play.utils.json_utils import zstd_json_loads
 
 
 @pytest.mark.asyncio
@@ -69,6 +70,11 @@ async def test_movies(play_db_test: Database, monkeypatch: pytest.MonkeyPatch) -
         assert r.path == 'Uncharted.mkv'
         assert r.meta_data == {'some': 'data'}
         mock_cache_subtitles.assert_awaited_once()
+        compressed_metadata = await session.scalar(
+            sa.text('SELECT metadata FROM movies LIMIT 1')
+        )
+        assert isinstance(compressed_metadata, bytes)
+        assert zstd_json_loads(compressed_metadata) == {'some': 'data'}
 
     await scanner.delete_path('Uncharted.mkv')
     async with play_db_test.session() as session:

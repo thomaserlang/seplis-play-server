@@ -1,7 +1,8 @@
+from compression import zstd
 from typing import Any
 
 import orjson
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 
 def default(obj: BaseModel) -> dict:
@@ -20,3 +21,16 @@ def json_dumps(obj: Any) -> str:
 
 def json_loads(s: str | bytes) -> Any:
     return orjson.loads(s.decode() if isinstance(s, bytes) else s)
+
+
+def zstd_json_dumps_bytes(value: JsonValue) -> bytes:
+    return zstd.compress(
+        orjson.dumps(
+            value,
+            option=orjson.OPT_UTC_Z | orjson.OPT_NAIVE_UTC,
+        )
+    )
+
+
+def zstd_json_loads(value: bytes | bytearray | memoryview) -> JsonValue:
+    return orjson.loads(zstd.decompress(bytes(value)))

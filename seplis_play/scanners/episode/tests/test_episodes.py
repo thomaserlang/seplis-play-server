@@ -14,6 +14,7 @@ from seplis_play.scanners.episode.episode_schemas import Episode, ParsedFileEpis
 from seplis_play.schemas.page_cursor_schema import PageCursorResult
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
+from seplis_play.utils.json_utils import zstd_json_loads
 
 
 @pytest.mark.asyncio
@@ -179,6 +180,11 @@ async def test_save_item(play_db_test: Database, monkeypatch: pytest.MonkeyPatch
         r = await session.scalars(sa.select(MEpisode))
         r = r.all()
         assert len(r) == 3
+        compressed_metadata = await session.scalar(
+            sa.text('SELECT metadata FROM episodes LIMIT 1')
+        )
+        assert isinstance(compressed_metadata, bytes)
+        assert zstd_json_loads(compressed_metadata) == {'some': 'data'}
 
     await scanner.delete_path(episodes[0][1])
 

@@ -1,3 +1,4 @@
+from compression import zstd
 from pathlib import Path
 from typing import cast
 from unittest import mock
@@ -11,9 +12,8 @@ from seplis_play.scanners.subtitles.subtitle_cache import (
     cache_missing_subtitles,
     delete_cached_subtitles,
     get_cached_subtitle,
-    subtitle_cache_file,
 )
-from seplis_play.scanners.subtitles.subtitle_models import MExternalSubtitle
+from seplis_play.scanners.subtitles.subtitle_cache_models import MCachedSubtitle
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 
 
@@ -68,9 +68,18 @@ async def test_cache_adds_only_missing_configured_languages(
     await cache_missing_subtitles(metadata)
     assert extract.await_count == 3
 
-    cached_english = subtitle_cache_file(source_path, 'eng', 2, 'webvtt')
-    assert cached_english == tmp_path / 'episode.eng.2.vtt.zst'
-    cached_english.unlink()
+    async with play_db_test.session() as session:
+        cached_english = await session.scalar(
+            sa.select(MCachedSubtitle).where(
+                MCachedSubtitle.stream_index == 2,
+                MCachedSubtitle.type == 'webvtt',
+            )
+        )
+        assert cached_english is not None
+        assert cached_english.content == 'eng:0:webvtt'
+        cached_english.content = None
+        await session.commit()
+
     await cache_missing_subtitles(metadata)
     assert extract.await_count == 4
 
@@ -84,8 +93,8 @@ async def test_cache_adds_only_missing_configured_languages(
     async with play_db_test.session() as session:
         rows = list(
             await session.scalars(
-                sa.select(MExternalSubtitle).order_by(
-                    MExternalSubtitle.stream_index, MExternalSubtitle.type
+                sa.select(MCachedSubtitle).order_by(
+                    MCachedSubtitle.stream_index, MCachedSubtitle.type
                 )
             )
         )
@@ -95,12 +104,30 @@ async def test_cache_adds_only_missing_configured_languages(
         (4, 'ass'),
         (4, 'webvtt'),
     ]
+    assert all(row.content is not None for row in rows)
     assert await get_cached_subtitle(metadata, 'eng:0', 'webvtt') == 'eng:0:webvtt'
+
+    async with play_db_test.session() as session:
+        compressed = await session.scalar(
+            sa.text(
+                'SELECT content FROM cached_subtitles '
+                "WHERE stream_index = 2 AND type = 'webvtt'"
+            )
+        )
+    assert isinstance(compressed, bytes)
+    assert compressed != b'eng:0:webvtt'
+    assert zstd.decompress(compressed) == b'eng:0:webvtt'
+
+    config.subtitle_cache_languages = ['eng']
+    await cache_missing_subtitles(metadata)
+    async with play_db_test.session() as session:
+        rows = list(await session.scalars(sa.select(MCachedSubtitle)))
+    assert [(row.stream_index, row.type) for row in rows] == [(2, 'webvtt')]
 
     async with play_db_test.session() as session:
         await delete_cached_subtitles(source_path, session)
         await session.commit()
-    assert not any(tmp_path.glob('*.zst'))
+        assert await session.scalar(sa.select(MCachedSubtitle)) is None
 
 
 @pytest.mark.asyncio
@@ -119,5 +146,10 @@ async def test_failed_extraction_remains_a_cache_miss(
     await cache_missing_subtitles(metadata)
 
     async with play_db_test.session() as session:
-        assert await session.scalar(sa.select(MExternalSubtitle)) is None
+        cached = await session.scalar(sa.select(MCachedSubtitle))
+        assert cached is not None
+        assert cached.content is None
     assert await get_cached_subtitle(metadata, 'eng:0', 'webvtt') is None
+
+    await cache_missing_subtitles(metadata)
+    assert extract.await_count == 2
