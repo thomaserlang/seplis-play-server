@@ -95,6 +95,9 @@ def source_streams_from_metadata(
         if codec_type == 'subtitle' and stream.get('codec_name') in (
             'dvd_subtitle',
             'hdmv_pgs_subtitle',
+            'none',
+            'unknown',
+            None,
         ):
             continue
         title = tags.get('title') if tags else None

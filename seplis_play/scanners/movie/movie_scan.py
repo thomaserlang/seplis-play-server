@@ -17,7 +17,7 @@ from seplis_play.scanners.subtitles.subtitle_cache import (
     delete_cached_subtitles,
 )
 
-from ..scan_base import PlayScan
+from ..scan_base import MediaProbeError, PlayScan
 
 
 class MovieScan(PlayScan):
@@ -99,6 +99,9 @@ class MovieScan(PlayScan):
                     await self.add_to_index(movie_id=movie_id, created_at=modified_time)
 
                     logger.info(f'[movie-{movie_id}] Saved {path}')
+                except MediaProbeError as e:
+                    logger.warning(f'Could not probe movie {path}: {e}')
+                    return False
                 except Exception as e:
                     metadata = None
                     logger.error(str(e))

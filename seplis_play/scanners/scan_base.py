@@ -11,6 +11,10 @@ from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.utils.json_utils import json_loads
 
 
+class MediaProbeError(Exception):
+    pass
+
+
 class PlayScan:
     SCANNER_NAME: str = 'Unnamed scanner'
     SUPPORTED_EXTS: list[str] = config.media_types
@@ -102,18 +106,20 @@ class PlayScan:
             stderr=subprocess.PIPE,
         )
         data, error = await process.communicate()
-        if error:
-            if isinstance(error, bytes):
-                error = error.decode('utf-8')
-            raise Exception(f'FFprobe error {path}: {error}')
-        if not data:
-            raise Exception(
-                f'Failed to get metadata from {path}, either this is '
-                'not a media file or it is corrupt.'
-            )
-        if isinstance(data, bytes):
-            data = data.decode('utf-8')
-        result: SourceMetadata = json_loads(data)
+        if process.returncode != 0 or not data:
+            detail = error.decode('utf-8', errors='replace').strip().splitlines()
+            detail = detail[-1][:500] if detail else ''
+            raise MediaProbeError(detail or f'ffprobe exited with {process.returncode}')
+        try:
+            result: SourceMetadata = json_loads(data)
+        except ValueError as exc:
+            raise MediaProbeError('ffprobe returned invalid JSON') from exc
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get('streams'), list)
+            or not isinstance(result.get('format'), dict)
+        ):
+            raise MediaProbeError('ffprobe returned incomplete metadata')
         if config.extract_keyframes and path.endswith('.mkv'):
             result['keyframes'] = await self.get_keyframes(path)
         return result
@@ -148,10 +154,14 @@ class PlayScan:
         )
         data, error = await process.communicate()
 
-        if error:
-            if isinstance(error, bytes):
-                error = error.decode('utf-8')
-            logger.error(f'FFprobe error {path}:  {error}')
+        if process.returncode != 0:
+            detail = error.decode('utf-8', errors='replace').strip().splitlines()
+            reason = (
+                detail[-1][:500]
+                if detail
+                else f'ffprobe exited with {process.returncode}'
+            )
+            logger.warning(f'Could not get keyframes from {path}: {reason}')
             return None
 
         if not data:
@@ -161,13 +171,15 @@ class PlayScan:
             )
             return None
 
-        if isinstance(data, bytes):
-            data = data.decode('utf-8')
-        parsed: dict[str, Any] = json_loads(data)
+        try:
+            parsed: dict[str, Any] = json_loads(data)
+        except ValueError:
+            logger.warning(f'ffprobe returned invalid keyframes for {path}')
+            return None
         keyframes: list[str] = [
             r['pts_time']
-            for r in parsed['packets']
-            if r['flags'].startswith('K_') and r.get('pts_time')
+            for r in parsed.get('packets', [])
+            if r.get('flags', '').startswith('K_') and r.get('pts_time')
         ]
         return keyframes
 

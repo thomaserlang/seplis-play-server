@@ -17,7 +17,7 @@ from seplis_play.scanners.subtitles.subtitle_cache import (
 )
 from seplis_play.schemas.page_cursor_schema import PageCursorResult
 
-from ..scan_base import PlayScan
+from ..scan_base import MediaProbeError, PlayScan
 from ..subtitles.subtitle_scan import SubtitleScan
 from .episode_constants import EPISODE_FILENAME_PATTERNS
 from .episode_models import MEpisode, MEpisodeNumberLookup, MSeriesIdLookup
@@ -154,6 +154,10 @@ class EpisodeScan(PlayScan):
                     logger.info(
                         f'[episode-{item.series_id}-{item.episode_number}] Saved {path}'
                     )
+                except MediaProbeError as e:
+                    metadata = None
+                    logger.warning(f'Could not probe episode {path}: {e}')
+                    return False
                 except Exception as e:
                     metadata = None
                     logger.exception(

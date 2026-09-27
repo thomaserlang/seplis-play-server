@@ -47,7 +47,11 @@ async def get_subtitle_file(
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        logger.warning(f'Subtitle file could not be exported!: {stderr}')
+        detail = ' | '.join(stderr.decode('utf-8', errors='replace').splitlines()[-3:])
+        logger.warning(
+            f'Subtitle file could not be exported from '
+            f'{metadata["format"]["filename"]} (stream {sub_index.index}): {detail}'
+        )
         return None
     v = stdout.decode('utf-8')
     return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
@@ -97,7 +101,10 @@ async def get_subtitle_file_from_external(
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        logger.warning(f'Subtitle file could not be exported!: {stderr}')
+        detail = ' | '.join(stderr.decode('utf-8', errors='replace').splitlines()[-3:])
+        logger.warning(
+            f'Subtitle file could not be exported from {sub_metadata.path}: {detail}'
+        )
         return None
     v = stdout.decode('utf-8')
     return v if not offset or (output_format != 'webvtt') else offset_webvtt(v, offset)
