@@ -494,6 +494,6 @@ class EpisodeNumberLookup:
         r = await client.get(f'/2/series/{episode.series_id}/episodes', params=params)
         r.raise_for_status()
         episodes = PageCursorResult[Episode].model_validate(r.json())
-        if not episodes.items:
+        if not episodes.records:
             return None
-        return episodes.items[0].number
+        return episodes.records[0].number

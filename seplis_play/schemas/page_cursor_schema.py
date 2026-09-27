@@ -6,5 +6,5 @@ T = TypeVar('T')
 
 
 class PageCursorResult[T](BaseModel):
-    items: list[T]
+    records: list[T]
     cursor: str | None = None

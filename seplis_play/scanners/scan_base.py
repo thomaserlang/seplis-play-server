@@ -56,7 +56,7 @@ class PlayScan:
         files: list[str] = []
         for dirname, file_ in self._get_files(self.scan_path):
             info = os.path.splitext(file_)
-            if file_.startswith('._'):
+            if file_.startswith('.'):
                 continue
             if len(info) != 2:
                 continue

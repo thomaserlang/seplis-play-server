@@ -81,6 +81,9 @@ async def worker(
         if item is None:
             break
         change, path, scan_info = item
+        if os.path.basename(path).startswith('.'):
+            queue.task_done()
+            continue
         try:
             logger.info(f'[Event detected: {change.name}]: {path} ({scan_info.type})')
             info = os.path.splitext(path)

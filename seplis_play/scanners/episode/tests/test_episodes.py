@@ -10,8 +10,7 @@ import sqlalchemy as sa
 from seplis_play.database import Database
 from seplis_play.scan import EpisodeScan
 from seplis_play.scanners.episode.episode_models import MEpisode
-from seplis_play.scanners.episode.episode_schemas import Episode, ParsedFileEpisode
-from seplis_play.schemas.page_cursor_schema import PageCursorResult
+from seplis_play.scanners.episode.episode_schemas import ParsedFileEpisode
 from seplis_play.schemas.source_metadata_schemas import SourceMetadata
 from seplis_play.testbase import run_file
 from seplis_play.utils.json_utils import zstd_json_loads
@@ -32,6 +31,7 @@ async def test_get_files() -> None:
                 (
                     'NCIS.S01E01.Yankee White.avi',
                     'NCIS.S01E02.Hung Out to Dry.avi',
+                    '.NCIS.S01E03.Working.avi',
                 ),
             ),
             (
@@ -204,7 +204,7 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     respx.get('/2/series/1/episodes', params={'season': '1', 'episode': '2'}).mock(
         return_value=httpx.Response(
             200,
-            json=PageCursorResult[Episode](items=[Episode(number=2)]).model_dump(),
+            json={'records': [{'number': 2}], 'cursor': None, 'total': None},
         )
     )
     episode = ParsedFileEpisode(
@@ -220,7 +220,7 @@ async def test_episode_number_lookup(play_db_test: Database) -> None:
     respx.get('/2/series/1/episodes', params={'air_date': '2014-11-14'}).mock(
         return_value=httpx.Response(
             200,
-            json=PageCursorResult[Episode](items=[Episode(number=3)]).model_dump(),
+            json={'records': [{'number': 3}], 'cursor': None, 'total': None},
         )
     )
     episode = ParsedFileEpisode(
