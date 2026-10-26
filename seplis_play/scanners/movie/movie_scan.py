@@ -65,8 +65,6 @@ class MovieScan(PlayScan):
                         return False
                 try:
                     metadata = await self.get_metadata(path)
-                    if not metadata:
-                        return False
                     if media_changed:
                         await delete_cached_subtitles(path, session)
 
